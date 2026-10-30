@@ -1,0 +1,6 @@
+{
+  "sampling": {"seed": 42, "temperature": 0, "max_tokens": 128},
+  "datasets": [
+    {"id": "example_en", "kind": "json", "source": "samples.json", "task": "t2s", "language": "en", "expected": 2}
+  ]
+}

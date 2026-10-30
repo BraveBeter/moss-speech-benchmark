@@ -1,0 +1,8 @@
+{
+  "server": {"branch": "REPLACE", "commit": "REPLACE", "dirty": false},
+  "model_revision": "REPLACE",
+  "codec_revision": "REPLACE",
+  "hardware": {"gpu_model": "REPLACE", "gpu_count": 1, "gpu_memory_bytes": null, "driver": "REPLACE", "cuda": "REPLACE"},
+  "software": {"pytorch": "REPLACE", "sglang": "REPLACE", "sglang_omni": "REPLACE"},
+  "settings": {"dtype": "REPLACE", "attention_backend": "REPLACE", "cuda_graph": false, "cache": "REPLACE", "chunk_size": null, "max_running_requests": null, "voice_reference_sha256": "REPLACE"}
+}

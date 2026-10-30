@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moss-speech-benchmark"
+version = "0.1.0"
+description = "Standalone MOSS-Speech chat performance benchmark"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
+dependencies = ["aiohttp>=3.9,<4", "numpy>=1.24,<3", "tqdm>=4.66,<5"]
+
+[project.optional-dependencies]
+hf = ["datasets>=3"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "build"]
+
+[project.scripts]
+moss-speech-bench = "moss_speech_bench.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["**/_vendor/**"]
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.setuptools.data-files]
+"share/moss-speech-benchmark" = ["ORIGIN.md", "origin.json"]

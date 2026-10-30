@@ -1,0 +1,49 @@
+{
+  "reference_commit": "86ab381fd9ff2fbbd7b638c50b9d48aaf623e0db",
+  "upstream_commit": "f96b10e95ea98801a28cf27dd5f6a2b0a9d878c9",
+  "files": [
+    {
+      "source": "src/tts_serving_benchmark/data.py",
+      "relative_path": "data.py",
+      "sha256": "50a7e055f0bd1ded2092720666db52eb7a74eb382f9e599648d3647937d11d3e",
+      "vendored_sha256": "50a7e055f0bd1ded2092720666db52eb7a74eb382f9e599648d3647937d11d3e"
+    },
+    {
+      "source": "src/tts_serving_benchmark/runner.py",
+      "relative_path": "runner.py",
+      "sha256": "1d1121a8b492397ebe1ffd5e04e44d3bb60ec8ea583ce9c7e97aaea7081239bb",
+      "vendored_sha256": "ba5a7c010bd1dedecf57bc36c8bd92deffbcd7c45239fa606149edc5709c58b6"
+    },
+    {
+      "source": "src/tts_serving_benchmark/dataset.py",
+      "relative_path": "dataset.py",
+      "sha256": "28f59a19e8f652a625776051946d66510396792a0f137d9e2fcfdb73dc153274",
+      "vendored_sha256": "28f59a19e8f652a625776051946d66510396792a0f137d9e2fcfdb73dc153274"
+    },
+    {
+      "source": "src/tts_serving_benchmark/metrics/performance.py",
+      "relative_path": "metrics/performance.py",
+      "sha256": "583ef1cb6ef416919369c53cf877bced1d8eea47b94dabedd4ae6db3dadd7b46",
+      "vendored_sha256": "8a6da3e22f998f9b4bd1fea7b82dc041f97744f3f28e098d131fd56d907c9c26"
+    },
+    {
+      "source": "src/tts_serving_benchmark/metrics/playback_continuity.py",
+      "relative_path": "metrics/playback_continuity.py",
+      "sha256": "002a33af92d2707f4b5aef625e9cf91cfc3b9faab8b9bcd855edab12d00f37db",
+      "vendored_sha256": "002a33af92d2707f4b5aef625e9cf91cfc3b9faab8b9bcd855edab12d00f37db"
+    },
+    {
+      "source": "src/tts_serving_benchmark/metrics/_format.py",
+      "relative_path": "metrics/_format.py",
+      "sha256": "7350aed2dd3f1a4dc04e80ff51bde568834549e35c172b0b955af987d12604bf",
+      "vendored_sha256": "7350aed2dd3f1a4dc04e80ff51bde568834549e35c172b0b955af987d12604bf"
+    },
+    {
+      "source": "src/tts_serving_benchmark/metrics/__init__.py",
+      "relative_path": "metrics/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "vendored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "changes": "Namespace imports; runner HTTP pool follows concurrency and drains cancelled tasks. Metric formulas and dataset loader unchanged."
+}

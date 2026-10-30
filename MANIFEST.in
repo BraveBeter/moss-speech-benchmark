@@ -1,0 +1,3 @@
+include LICENSE ORIGIN.md origin.json
+recursive-include examples *.json
+recursive-include tests *.py
