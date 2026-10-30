@@ -1,0 +1,381 @@
+{
+  "profile": "eager-base",
+  "workspace_root": "../..",
+  "core_sha": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
+  "core_root": "{workspace_root}/worktrees/moss-speech-base",
+  "candidate_python": "{workspace_root}/.audit/envs/current-main/bin/python",
+  "model_path": "{workspace_root}/.audit/assets/MOSS-Speech",
+  "codec_path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec",
+  "audio_en": "{workspace_root}/.audit/s4/gpu/inputs/input-en.wav",
+  "audio_zh": "{workspace_root}/.audit/s4/gpu/inputs/input-cn.wav",
+  "voice_wav": "{workspace_root}/.audit/assets/MOSS-Speech-reference/assets/prompt-cn.wav",
+  "code_profile": "{workspace_root}/.audit/s4/reference/codec/full-code-profile-v2.json",
+  "golden": {
+    "C02": {
+      "report": "{workspace_root}/.audit/s4/reference/hf-reference.json"
+    },
+    "C04": {
+      "report": "{workspace_root}/.audit/s4/reference/hf-sdpa-allrows-run1/hf-weight-reference.json",
+      "tensors": "{workspace_root}/.audit/s4/reference/hf-sdpa-allrows-run1/hf-weight-logits.safetensors"
+    },
+    "C05": {
+      "report": "{workspace_root}/.audit/s4/reference/codec/hf-run2/hf-encoder-features.json",
+      "tensors": "{workspace_root}/.audit/s4/reference/codec/hf-run2/hf-encoder-features.safetensors"
+    },
+    "C06": {
+      "report": "{workspace_root}/.audit/s4/reference/codec/hf-full-run1/hf-full-codec-reference.json",
+      "tensors": "{workspace_root}/.audit/s4/reference/codec/hf-full-run1/hf-full-codec-reference.safetensors"
+    }
+  },
+  "assets": [
+    {
+      "id": "MOSS-Speech/.gitattributes",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/.gitattributes",
+      "sha256": "a0e948ca693c63e0b5139f66bd709003cbcf8bc764acb1ee687a552885c8fe2c",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/README.md",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/README.md",
+      "sha256": "370251181287d0330136b3ba1a4b13e7378079ff76b475325412762c5c253c1e",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/added_tokens.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/added_tokens.json",
+      "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/chat_template.jinja",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/chat_template.jinja",
+      "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/config.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/config.json",
+      "sha256": "e86bb40c4aaaba4a4b921cbdadc67a2a0e8414bf6496c09dc90930919eb2a1b9",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/configuration_moss_speech.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/configuration_moss_speech.py",
+      "sha256": "3f2dd9b0fbe18a8a535978f1c3b03a534f15386703c62f379cd7e0398ec0b88e",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/generation_config.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/generation_config.json",
+      "sha256": "1392e3ff01ead0a398c25ab7a4170b163c4514e09fe227ef8034ec93d51a723f",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/merges.txt",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/merges.txt",
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/model-00001-of-00004.safetensors",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/model-00001-of-00004.safetensors",
+      "sha256": "0b0908b83517a51a1ae3eb2bc56432c61fc780318bc00502df8bfb189031c2d4",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/model-00002-of-00004.safetensors",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/model-00002-of-00004.safetensors",
+      "sha256": "24c9ebe8c47ac0d5feaf303fc927150442a19cfd818d82fda5be11cf225a063f",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/model-00003-of-00004.safetensors",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/model-00003-of-00004.safetensors",
+      "sha256": "c64e43975193f66dbf5c36178c186a31450edf13250686eff7a381e3d4181826",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/model-00004-of-00004.safetensors",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/model-00004-of-00004.safetensors",
+      "sha256": "c8aaf874776836e639c0682c854427eb65cb1b74eea670d885917d54d4d05983",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/model.safetensors.index.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/model.safetensors.index.json",
+      "sha256": "c8736486a62349a020beaadc61812dbb5cde2fb7452f7fabe8b4756e6aa9ed90",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/modeling_moss_speech.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/modeling_moss_speech.py",
+      "sha256": "00dc56ec8e3fdcccbb0cb75940c3e64a24a5c1724cf7fb67b1a8df46f4c5cdab",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/processing_moss_speech.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/processing_moss_speech.py",
+      "sha256": "2cbea069bcd0e4ed4cba55fb659dcc2c46a9247cec63089073be3f307564840f",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/special_tokens_map.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/special_tokens_map.json",
+      "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/tokenizer.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/tokenizer.json",
+      "sha256": "9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/tokenizer_config.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/tokenizer_config.json",
+      "sha256": "0a04a9d7d4a62b28482bdfe726c122756de85714fb64166ace92ae75b8f57614",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech/vocab.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech/vocab.json",
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/.gitattributes",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/.gitattributes",
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/__init__.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/__init__.py",
+      "sha256": "760180db332af9e5bcea0e09ade13c5c4abef7e76dc13762a3a8acf044626243",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/config.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/config.json",
+      "sha256": "7fcfa2e182024287a5cc3827eade007f10f32c7ec198ba38fe2362b576a4ef31",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/configuration_moss_speech_codec.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/configuration_moss_speech_codec.py",
+      "sha256": "09ccffc2ec79f06dc8db3ae0bdf4c17e3518ad3cca141790839a26534bebe487",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/flow/campplus.onnx",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/flow/campplus.onnx",
+      "sha256": "a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/flow/config.yaml",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/flow/config.yaml",
+      "sha256": "91fb14b833a8325aec406ce0df5e8775ce2e12698906993da2c3d7abc8ef4b8a",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/flow/flow-chunk-25.pt",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/flow/flow-chunk-25.pt",
+      "sha256": "bd96a8a6b8b358b97debbf64659a9f7278fcf9d07b9d2fa33088ad991f3a7049",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/flow/flow-chunk-5.pt",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/flow/flow-chunk-5.pt",
+      "sha256": "0f5640b8ec3bb46bc31320e01d183ce92717d06e62637149423b74fa7e405e68",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/flow/flow.pt",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/flow/flow.pt",
+      "sha256": "0f5640b8ec3bb46bc31320e01d183ce92717d06e62637149423b74fa7e405e68",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/flow/hift.pt",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/flow/hift.pt",
+      "sha256": "3386cc880324d4e98e05987b99107f49e40ed925b8ecc87c1f4939432d429879",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/model.safetensors",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/model.safetensors",
+      "sha256": "d9a266ec22ad81910a4a2ac4241f8582ded172faba87693e0df32d6570186367",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/modeling_moss_speech_codec.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/modeling_moss_speech_codec.py",
+      "sha256": "26467789d521ae48e1a4effc7c8f842a47ba71c95a4ef6e56ea8c9fa7b2ce8f8",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/modeling_whisper.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/modeling_whisper.py",
+      "sha256": "e1f8d269ec149a46456644cc5d2daa01c97bce72cd155bacca5dae7cc1d57aac",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/preprocessor_config.json",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/preprocessor_config.json",
+      "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "MOSS-Speech-Codec/utils.py",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec/utils.py",
+      "sha256": "5e7143d3c827bd405b80942a8fb59c7e10198ae516b6fd5ef346d443ff971d4c",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C02/report",
+      "path": "{workspace_root}/.audit/s4/reference/hf-reference.json",
+      "sha256": "9cdee77304f090f918eda96c007c18e1cdb33762d60984ba5b84c84dc84c2225",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C04/report",
+      "path": "{workspace_root}/.audit/s4/reference/hf-sdpa-allrows-run1/hf-weight-reference.json",
+      "sha256": "0c0fb150f2dc7db4a4266e460d46b5c013d8ba77dfe00422a4820a3f89df2c69",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C04/tensors",
+      "path": "{workspace_root}/.audit/s4/reference/hf-sdpa-allrows-run1/hf-weight-logits.safetensors",
+      "sha256": "7cafd305579542888fcd3d90a9caefa633382d4cc7ddfc250f9fa89a7fb67276",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C05/report",
+      "path": "{workspace_root}/.audit/s4/reference/codec/hf-run2/hf-encoder-features.json",
+      "sha256": "9b42f405ccb0f146e8e135b82e998f6b9c9a3f4ca35d41cea14dc2f3616fc09f",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C05/tensors",
+      "path": "{workspace_root}/.audit/s4/reference/codec/hf-run2/hf-encoder-features.safetensors",
+      "sha256": "44c1cd908cd1b244414db34f916b84f6648fea6d4ffefaf8d8b265b05ac77fb2",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C06/report",
+      "path": "{workspace_root}/.audit/s4/reference/codec/hf-full-run1/hf-full-codec-reference.json",
+      "sha256": "1c58773a0e5bda11673f05cd50d14afbd084c9f1087dc55043fb147e6c4ba865",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "C06/tensors",
+      "path": "{workspace_root}/.audit/s4/reference/codec/hf-full-run1/hf-full-codec-reference.safetensors",
+      "sha256": "e2ea7658affd3ca4049ac751751906c83aa8d35c06766470e983aafce1bb371e",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "canonical",
+      "path": "{workspace_root}/worktrees/moss-speech-base/tests/fixtures/moss_speech/canonical_inputs.json",
+      "sha256": "c3f991dc400b05353a61d46d21f5ce76ee8d329cbcfcd36766c3d9e92d90e239",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "audio_en",
+      "path": "{workspace_root}/.audit/s4/gpu/inputs/input-en.wav",
+      "sha256": "37db41b8ff1b02a1abfb4c2367af02326e7cb950f39e348375b5f02680f65f3e",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "audio_zh",
+      "path": "{workspace_root}/.audit/s4/gpu/inputs/input-cn.wav",
+      "sha256": "d27dfdcc1d78cf2d66ae8030d5c089365e2d62ada779176e9909509c89528813",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "voice",
+      "path": "{workspace_root}/.audit/assets/MOSS-Speech-reference/assets/prompt-cn.wav",
+      "sha256": "cde3e98fdf0c90d4a578aa5858e1d4f36d99d3dd96d7ebb302b8bb976c3d12da",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "code_profile",
+      "path": "{workspace_root}/.audit/s4/reference/codec/full-code-profile-v2.json",
+      "sha256": "a0ef2f1e4cc1c0d40d502f2d17d3e727855b3c3f74ab15874f0533f1a4c115fb",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "hf-lock",
+      "path": "{workspace_root}/.audit/s4/reference/runtime.lock.txt",
+      "sha256": "c74fd5391f647f81da07fe4e122e83107600dcc0a04d8f24e5d38c3503205033",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "codec-lock",
+      "path": "{workspace_root}/.audit/s4/reference/codec/full-runtime.lock.txt",
+      "sha256": "61ab87d7b559ff7aaf1472f4d30cc87b4d2d24f8638a4f173d6f96dd4b2a42a8",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "candidate-lock",
+      "path": "{workspace_root}/.audit/s5-prep/baseline-refresh/environment-prepare/installed-runtime.lock.txt",
+      "sha256": "11bafa249f8b80113ff296d549acf44e36c4e61faa0e2be8d0cf7e9aec9e128e",
+      "level": "fresh_full_hash"
+    },
+    {
+      "id": "source-wheel",
+      "path": "{workspace_root}/.audit/s4/reference/codec/source-wheel-v1/source-wheel-manifest.json",
+      "sha256": "e0c50a1f1079723bb716971dedff37169e894864d670e69ac93e9325105220b4",
+      "level": "fresh_full_hash"
+    }
+  ],
+  "base_url": "http://127.0.0.1:8000",
+  "model": "moss-speech",
+  "deployment": {
+    "core_sha": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
+    "gpu_count": 1,
+    "ar_tp": 1,
+    "ar_graph": false,
+    "voice_sha256": "cde3e98fdf0c90d4a578aa5858e1d4f36d99d3dd96d7ebb302b8bb976c3d12da",
+    "ar_dtype": "bfloat16",
+    "codec_dtype": "float32",
+    "attention": "torch_native",
+    "context_limit": 512,
+    "context_length": 1024,
+    "max_total_tokens": 4096,
+    "max_running_requests": 4,
+    "max_queued_requests": 20,
+    "chunk_size": 25,
+    "placement": {
+      "ar": 0,
+      "encoder": 0,
+      "vocoder": 0
+    }
+  },
+  "providers": {
+    "C01": {
+      "launcher": [],
+      "timeout": 1000
+    },
+    "C02": {
+      "launcher": [],
+      "timeout": 1000
+    },
+    "C03": {
+      "launcher": [],
+      "timeout": 1000
+    },
+    "C04": {
+      "launcher": [],
+      "timeout": 1000
+    },
+    "C05": {
+      "launcher": [],
+      "timeout": 1000
+    },
+    "C06": {
+      "launcher": [],
+      "timeout": 1000
+    }
+  }
+}

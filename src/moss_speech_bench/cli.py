@@ -20,10 +20,19 @@ from .storage import dumps, read_json, source_identity, write_json
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--phase", choices=("infer", "report", "score", "all"), default="infer")
+    p.add_argument(
+        "--phase",
+        choices=("infer", "report", "score", "all", "correctness", "correctness-report"),
+        default="infer",
+    )
     p.add_argument("--mode", choices=("custom", "daily", "full"), default="custom")
     p.add_argument("--config", type=Path, help="Whole-dataset workload JSON")
     p.add_argument("--model")
+    p.add_argument("--correctness-config", type=Path)
+    p.add_argument(
+        "--checks",
+        help="Explicit diagnostic C00..C08 subset; omitted required gates remain not_run",
+    )
     p.add_argument("--score-config", type=Path, help="Offline scoring assets/config JSON")
     p.add_argument("--base-url", default="http://127.0.0.1:8000")
     p.add_argument("--deployment", type=Path, help="Operator-supplied server metadata JSON")
@@ -59,6 +68,20 @@ def parser():
 
 
 async def run(args):
+    if args.phase in ("correctness", "correctness-report"):
+        if args.dry_run:
+            raise ValueError("Correctness has no dry-run; select C00 for asset preflight")
+        from .correctness import render_correctness, run_correctness
+
+        if args.phase == "correctness-report":
+            suite = render_correctness(args.output_dir)
+        else:
+            if not args.correctness_config:
+                raise ValueError("correctness requires --correctness-config")
+            suite = await run_correctness(
+                args.correctness_config, args.output_dir, args.checks, args.resume
+            )
+        return {"correctness": {"failed": suite["status"] != "pass"}}
     if args.phase == "all":
         raise ValueError(
             "Use separate infer and score phases to avoid scorer/service resource overlap"
@@ -248,14 +271,15 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         result = asyncio.run(run(args))
-    except (ValueError, OSError, KeyError) as exc:
+    except (ValueError, OSError, KeyError, AssertionError) as exc:
         p.exit(2, f"error: {exc}\n")
     except KeyboardInterrupt:
         return 130
     if args.dry_run:
         print(dumps(result))
     else:
-        print(f"Report: {args.output_dir / 'summary.md'}")
+        name = "correctness.md" if args.phase.startswith("correctness") else "summary.md"
+        print(f"Report: {args.output_dir / name}")
     quality_file = args.output_dir / "quality.json"
     if args.phase in ("score", "report") and quality_file.exists():
         if read_json(quality_file)["status"] != "complete":

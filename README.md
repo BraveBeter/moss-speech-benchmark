@@ -1,7 +1,7 @@
 # MOSS-Speech benchmark client
 
 独立客户端，连接已启动的 SGLang-Omni `/v1/chat/completions` 服务。
-支持性能测试与基于已保存输出的离线质量评分。模型正确性测试保持独立。
+支持性能测试与基于已保存输出的离线质量评分。正确性与精度对齐通过独立correctness阶段和隔离provider运行，见[CORRECTNESS.md](CORRECTNESS.md)。
 
 复用用户指定 `tts-serving-benchmark` 中提取的 SGLang-Omni runner、SeedTTS loader、性能和播放连续性算法；新增 MOSS chat/SSE 适配与实验记录。来源和修改见 [ORIGIN.md](ORIGIN.md)。客户端不依赖 Torch/CUDA，不管理服务进程。
 
@@ -164,3 +164,5 @@ WER/CER报告全部可评分样本的corpus错误率、逐样本均值及评分�
 baseline比较还会核对评分器源码、模型资产hash、依赖版本、规范化配置和音色身份；完整且约定一致的评分才计算delta，coverage变化不会被当作质量收益。错误率越小越好、Accuracy/SIM/UTMOS越大越好，尚不设置任意质量合格阈值。
 
 本地测试验证评分协议、复用和归档行为；真实Whisper/Paraformer/WavLM/UTMOS权重及全量数据质量尚未验收。
+
+正确性入口、C00–C08固定选集、独立HF golden准入及Slurm配置见 [CORRECTNESS.md](CORRECTNESS.md)。

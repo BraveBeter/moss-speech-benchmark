@@ -35,3 +35,14 @@ replacing model download/cache orchestration. Source and copy hashes and selecte
 symbols are recorded in `origin.json`. Text normalization, edit counts, speaker
 embedding and UTMOS algorithms are preserved. QA alias matching and coverage/report
 management are new code outside `_vendor`.
+
+Correctness providers adapt the workspace's archived independent-reference
+comparisons (original paths and SHA256 in `origin.json`). The executable copies
+live in `providers/`; there are no execution imports of archived runners.
+Changes remove directory-depth/old-core bindings, use explicit current asset
+paths and retain the complete numerical algorithms. The CPU/CUDA selection is
+fixed from the recorded eager-base JUnit node IDs and three accelerator nodes;
+the target's tests and fixtures remain in its own checkout. The HTTP case
+protocol and assertions follow eager-base `tests/test_model/test_moss_speech_ci.py`
+and archived strict-C2 behavior, implemented using the standalone ChatClient
+without importing service-management fixtures.

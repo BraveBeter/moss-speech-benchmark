@@ -86,5 +86,35 @@
       }
     ],
     "changes": "Select pure ASR scoring functions; UTMOS local model-path constructor; remaining algorithms unchanged."
+  },
+  "correctness_sources": {
+    "eager_base": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
+    "providers": [
+      {
+        "source": ".audit/s4/reference/probe_core_comparison.py",
+        "source_sha256": "c84c8446da063ce94e9a2be7255cb8c30059f08745c88716684f3111817ace60",
+        "target": "processor.py",
+        "sha256": "9f610a61ea411d253abf712606ced756f973539ce503609c2c738a76315cb26f"
+      },
+      {
+        "source": ".audit/s4/reference/probe_core_weights.py",
+        "source_sha256": "0298426549d9d257e18ae9fd567b6bbbba2fe55b88ed9966378021e84a1c26a4",
+        "target": "ar.py",
+        "sha256": "7f1a29c0502927ad105f7ca4390b30aef3bcc5935baab387a1cf9580057ed608"
+      },
+      {
+        "source": ".audit/s4/reference/codec/probe_core_encoder_features.py",
+        "source_sha256": "510c90a30c1e48489fe3808aae8ef943cf701a7061cb7dfb3a5648c52d714930",
+        "target": "encoder.py",
+        "sha256": "a77cedb48c7f8ef1a622d9d2297643fe70d026b617a67817413e6ce1dea149bf"
+      },
+      {
+        "source": ".audit/s4/reference/codec/probe_core_full_codec.py",
+        "source_sha256": "2e245afcc24e6463eb90aa94097bf3531b256df54c9b0ffc5ee4a81fae999c00",
+        "target": "codec.py",
+        "sha256": "a1496cf1944956d2576cd2183639e5cdd739b512c131f8c1a4af10a3162f5236"
+      }
+    ],
+    "changes": "Explicit core/model/audio/profile paths; retain independent golden and all original numerical checks. CPU/CUDA tests stay in target source."
   }
 }
