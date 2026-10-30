@@ -55,7 +55,7 @@ def summarize(rows, expected, wall_s):
         ttfa_requests=sum(r.is_success and r.audio_ttfp_s is not None for r in observations),
         ttft_requests=sum(r.is_success and r.text_ttft_s is not None for r in observations),
         rtf_requests=sum(r.is_success and r.audio_duration_s > 0 for r in observations),
-        quality_status="not_implemented",
+        quality_status="not_scored",
         peak_gpu_memory=None,
         metric_version="omni-f96b10-moss-client-v1",
     )
@@ -152,6 +152,9 @@ def _load_manifest(root):
 def report(directory, baseline=None, allow_difference=()):
     root = Path(directory)
     manifest = _load_manifest(root)
+    from .quality import quality_report
+
+    quality = quality_report(root)
     performance, ledger = {}, []
     for cell in manifest["cells"]:
         rows, summary = collect_cell(root, cell)
@@ -164,7 +167,7 @@ def report(directory, baseline=None, allow_difference=()):
         {
             "scope": manifest["scope"],
             "state": manifest["state"],
-            "quality_status": "not_implemented",
+            "quality_status": "not_scored",
             **{
                 key: sum(s[key] for s in performance.values())
                 for key in (
@@ -181,7 +184,7 @@ def report(directory, baseline=None, allow_difference=()):
     lines = [
         "# MOSS-Speech performance",
         "",
-        "Quality: not implemented. Model correctness: outside client scope.",
+        "Quality: see offline quality section when scored. Model correctness: outside client scope.",
         "",
         "TTFA = first nonempty PCM SSE event (audio_ttfp_*); native TTFC and server GPU peak: N/A.",
         "Each row is one continuous dataset/concurrency/repeat; percentiles are not pooled across repeats.",
@@ -195,7 +198,9 @@ def report(directory, baseline=None, allow_difference=()):
 
     for key, metrics in performance.items():
         columns = [
-            metrics.get(k)
+            quality["cells"].get(key, {}).get("scored", 0)
+            if k == "scored" and quality
+            else metrics.get(k)
             for k in (
                 "expected",
                 "attempted",
@@ -268,4 +273,44 @@ def report(directory, baseline=None, allow_difference=()):
                 comparison["cells"][key] = changes
         write_json(root / "comparison.json", comparison)
         (root / "comparison.md").write_text("\n".join(table) + "\n")
+    if quality:
+        summary_path = root / "summary.json"
+        combined = read_json(summary_path)
+        combined["quality_status"] = quality["status"]
+        combined["quality_expected"] = sum(
+            next(iter(c["metrics"].values()))["expected"] for c in quality["cells"].values()
+        )
+        combined["scored"] = sum(c["scored"] for c in quality["cells"].values())
+        write_json(summary_path, combined)
+        with (root / "summary.md").open("a") as output:
+            output.write("\n" + (root / "quality.md").read_text())
+        if baseline and (Path(baseline) / "quality.json").exists():
+            previous = quality_report(Path(baseline))
+            differences = _differences(previous["contract"], quality["contract"])
+            comparison = read_json(root / "comparison.json")
+            comparison["quality"] = {
+                "compatible": comparison["compatible"] and not differences,
+                "differences": differences,
+                "cells": {},
+            }
+            if comparison["quality"]["compatible"]:
+                for name, cell in quality["cells"].items():
+                    changes = {}
+                    for metric, current in cell["metrics"].items():
+                        old = previous["cells"].get(name, {}).get("metrics", {}).get(metric, {})
+                        if (
+                            current["scored"] == current["expected"]
+                            and old.get("scored") == current["scored"]
+                            and current["value"] is not None
+                            and old.get("value") is not None
+                        ):
+                            changes[metric] = {
+                                "baseline": old["value"],
+                                "current": current["value"],
+                                "delta": current["value"] - old["value"],
+                            }
+                    comparison["quality"]["cells"][name] = changes
+            write_json(root / "comparison.json", comparison)
+            with (root / "comparison.md").open("a") as output:
+                output.write("\nOffline quality comparison: " + dumps(comparison["quality"]) + "\n")
     return performance

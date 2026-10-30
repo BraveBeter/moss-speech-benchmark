@@ -26,3 +26,12 @@ clocks are explicitly marked unavailable outside the copied metric code.
 
 The new adapter, workload mapping, run artifacts, CLI and reports are maintained
 outside `_vendor`. They do not import the inference engine or its model tests.
+
+Quality helpers reuse SGLang-Omni at `305273a673c281f2d214e1bed457a4b5b8895740`:
+`metrics/accuracy.py` and `metrics/speaker_similarity.py` are copied unchanged;
+`tasks/asr.py` contributes `_get_en_normalizer`, `normalize_text`, and `apply_wer`;
+`metrics/utmos.py` contributes `score_batch`, with a local TorchScript-path constructor
+replacing model download/cache orchestration. Source and copy hashes and selected
+symbols are recorded in `origin.json`. Text normalization, edit counts, speaker
+embedding and UTMOS algorithms are preserved. QA alias matching and coverage/report
+management are new code outside `_vendor`.

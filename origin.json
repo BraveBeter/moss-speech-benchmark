@@ -45,5 +45,46 @@
       "vendored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
-  "changes": "Namespace imports; runner HTTP pool follows concurrency and drains cancelled tasks. Metric formulas and dataset loader unchanged."
+  "changes": "Namespace imports; runner HTTP pool follows concurrency and drains cancelled tasks. Metric formulas and dataset loader unchanged.",
+  "quality_sources": {
+    "repository": "https://github.com/sgl-project/sglang-omni",
+    "commit": "305273a673c281f2d214e1bed457a4b5b8895740",
+    "files": [
+      {
+        "source": "benchmarks/metrics/accuracy.py",
+        "target": "accuracy.py",
+        "source_sha256": "5cb298c974af22fc4b2805aed393751fee791bf80685d972fdb0b445bd76aabb",
+        "vendored_sha256": "5cb298c974af22fc4b2805aed393751fee791bf80685d972fdb0b445bd76aabb",
+        "selected_symbols": null
+      },
+      {
+        "source": "benchmarks/metrics/speaker_similarity.py",
+        "target": "speaker_similarity.py",
+        "source_sha256": "18528106c718384e6e096b79031c78fbc90890344d80ba6ae3d4cbadc0d2545e",
+        "vendored_sha256": "18528106c718384e6e096b79031c78fbc90890344d80ba6ae3d4cbadc0d2545e",
+        "selected_symbols": null
+      },
+      {
+        "source": "benchmarks/tasks/asr.py",
+        "target": "asr_scoring.py",
+        "source_sha256": "f0e32c26b045b04d7e9c21da05d518ab2bac38f9804549e9a595e941b9d8d7af",
+        "vendored_sha256": "f5fd67a4953b230cc2e07d1c990ac403626ee47660c6ebc7630ada7f498b32bd",
+        "selected_symbols": [
+          "_get_en_normalizer",
+          "normalize_text",
+          "apply_wer"
+        ]
+      },
+      {
+        "source": "benchmarks/metrics/utmos.py",
+        "target": "utmos_scoring.py",
+        "source_sha256": "8cbd6d36f0b83c9e58092348a029b75b0c5d62060003faea49bb0ae2e795af9a",
+        "vendored_sha256": "4937158cd8f33b700fba156de675d3b15208ed6dd82b6107543c43a089803b25",
+        "selected_symbols": [
+          "UTMOSScorer"
+        ]
+      }
+    ],
+    "changes": "Select pure ASR scoring functions; UTMOS local model-path constructor; remaining algorithms unchanged."
+  }
 }

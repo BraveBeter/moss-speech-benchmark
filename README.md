@@ -1,7 +1,7 @@
 # MOSS-Speech benchmark client
 
 独立客户端，连接已启动的 SGLang-Omni `/v1/chat/completions` 服务。
-当前实现性能测试；后续在已保存输出上增加质量评分。模型正确性测试保持独立。
+支持性能测试与基于已保存输出的离线质量评分。模型正确性测试保持独立。
 
 复用用户指定 `tts-serving-benchmark` 中提取的 SGLang-Omni runner、SeedTTS loader、性能和播放连续性算法；新增 MOSS chat/SSE 适配与实验记录。来源和修改见 [ORIGIN.md](ORIGIN.md)。客户端不依赖 Torch/CUDA，不管理服务进程。
 
@@ -95,7 +95,7 @@ results/<run>/
 └── comparison.json / comparison.md  # 指定 baseline 时生成
 ```
 
-部分输出、HTTP 错误、超时、空输出、异常结束都保留；默认没有重试。`scored=0`、`quality_status=not_implemented`。`score` 和 `all` 当前明确报未实现。
+部分输出、HTTP 错误、超时、空输出、异常结束都保留；默认没有重试。推理阶段的performance.json保持原始性能记录；质量评分另存quality.json，合并报告记录实际Scored和quality_expected。infer后通过score单独执行评分；all明确要求分阶段执行，以便外层释放推理服务资源。
 
 ```bash
 # 原命令原配置增加 --resume
@@ -127,4 +127,40 @@ python -m build
 
 本地 HTTP 测试覆盖 UTF-8/SSE 分片、流式/非流式、音频时长、错误/usage、并发/预热、取消/恢复、产物校验、baseline 和安装后的 CLI。这些是客户端测试，不是 MOSS 模型正确性验证。真实 A800 运行、全量数据验收和质量评分仍待后续阶段。
 
-质量阶段将复用本次输出增加 WER/CER、固定音色 SIM、QA Accuracy 和 UTMOS；ASR/评分模型的版本、规范化规则、覆盖率与失败样本会单独记录。
+## 离线质量评分
+
+评分直接读取运行目录的冻结输入、文本和WAV，检查hash，不向MOSS服务发请求。无需保留原始数据集目录或启动生成服务。
+
+```bash
+# 选择题文本评分只需基础安装；音频错误率需质量依赖和本地ASR权重
+pip install -e '.[quality]'
+# 按需安装中文ASR、WavLM SIM或UTMOS；Torch与torchaudio应匹配
+pip install -e '.[zh,sim,utmos]'
+
+moss-speech-bench --phase score --output-dir results/base-daily \
+  --score-config examples/scoring.json
+moss-speech-bench --phase report --output-dir results/base-daily
+```
+
+[scoring.json](examples/scoring.json) 中的路径须换成本地资产，均相对该配置文件定位。省略某个模型会给对应指标记录unavailable；配置了不存在的文件则报配置错误。默认CPU；使用CUDA需在Slurm作业中运行并遵守资源预算。ASR、SIM和UTMOS不能争用受测服务的GPU。Whisper读WAV通常还需要环境提供ffmpeg。
+
+| 任务 | 指标和协议 |
+|---|---|
+| T2S EN | Whisper转录；复用上游EnglishTextNormalizer和jiwer WER |
+| T2S ZH | 本地FunASR/Paraformer转录；复用上游中文标点归一化与逐字CER |
+| T2S SIM | 复用上游WavLM-large SV；固定音色参考，与deployment.settings.voice_reference_sha256核对；输出cosine，原实现的百分值除以100 |
+| T2T | 复用上游选择题答案提取；默认A/B，可配置choices为ABCD等；不能解析计错并记录invalid |
+| S2T / S2S QA | 已保存文本或回答音频ASR；小写、英文标点/冠词/空白归一化后与可接受答案集exact match，工程回归协议 |
+| S2S UTMOS | 复用上游16kHz重采样、PCM16和预测过程；加载本地utmos.jit |
+
+EN Whisper large-v3和ZH Paraformer权重由外层预先准备，客户端不下载评分权重。SIM只支持实际固定音色参考，不使用未传入模型的SeedTTS参考音色；缺少音色身份则SIM unavailable。
+
+WER/CER报告全部可评分样本的corpus错误率、逐样本均值及评分覆盖率，不排除高错误率样本。Accuracy的主值为正确数/所选集合总条数；另存evaluated_accuracy，未完成/失败样本保留。没有任何可评分样本时值为null。每项指标均记录scored/failed/unavailable/generation_failed/not_attempted数量。length输出参与评分，原finish_reason保留。
+
+默认每个数据集只选一个性能测量段，优先C4/r1，否则选manifest中的第一个；quality.json显式记录selection。可用评分配置的cells列表指定其他测量段。Full性能扫描不会触发12次重复ASR；Full额外质量数据的获取与请求准备仍属于后续全量验收范围。
+
+每样本结果保存在quality/<评分约定与输出hash>/<sample-hash>.json，保存ASR转录、归一化文本、编辑计数、分值、错误及校验hash。相同评分约定和输入会复用已保存评分，包括失败记录；换模型/依赖/配置会生成新缓存，旧记录保留，不隐式重试。中断后重新执行score可继续未保存样本。quality.json和quality.md汇总，report会校验缓存并合并至summary。summary中的scored表示所需指标全部完成的样本数；quality_expected是实际选中的质量样本数，与性能扫描总请求数区分。
+
+baseline比较还会核对评分器源码、模型资产hash、依赖版本、规范化配置和音色身份；完整且约定一致的评分才计算delta，coverage变化不会被当作质量收益。错误率越小越好、Accuracy/SIM/UTMOS越大越好，尚不设置任意质量合格阈值。
+
+本地测试验证评分协议、复用和归档行为；真实Whisper/Paraformer/WavLM/UTMOS权重及全量数据质量尚未验收。

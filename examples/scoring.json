@@ -1,0 +1,12 @@
+{
+  "device": "cpu",
+  "choices": "AB",
+  "asr_en": {"path": "/path/to/whisper-large-v3.pt"},
+  "asr_zh": {"path": "/path/to/local/paraformer-zh"},
+  "sim": {
+    "path": "/path/to/wavlm_large_finetune.pth",
+    "wavlm_base": "/path/to/WavLM-Large.pt",
+    "reference": "/path/to/actual-server-voice.wav"
+  },
+  "utmos": {"path": "/path/to/utmos.jit"}
+}

@@ -24,6 +24,7 @@ def parser():
     p.add_argument("--mode", choices=("custom", "daily", "full"), default="custom")
     p.add_argument("--config", type=Path, help="Whole-dataset workload JSON")
     p.add_argument("--model")
+    p.add_argument("--score-config", type=Path, help="Offline scoring assets/config JSON")
     p.add_argument("--base-url", default="http://127.0.0.1:8000")
     p.add_argument("--deployment", type=Path, help="Operator-supplied server metadata JSON")
     p.add_argument("--output-dir", type=Path, required=True)
@@ -58,8 +59,16 @@ def parser():
 
 
 async def run(args):
-    if args.phase in ("all", "score"):
-        raise ValueError("Quality scoring is not implemented yet; use --phase infer or report")
+    if args.phase == "all":
+        raise ValueError(
+            "Use separate infer and score phases to avoid scorer/service resource overlap"
+        )
+    if args.phase == "score":
+        from .quality import score
+
+        quality = await asyncio.to_thread(score, args.output_dir, args.score_config)
+        report(args.output_dir, args.baseline, args.allow_difference)
+        return {"quality": {"failed": quality["status"] != "complete"}}
     if args.phase == "report":
         return report(args.output_dir, args.baseline, args.allow_difference)
     if not args.config or not args.model:
@@ -170,7 +179,7 @@ async def run(args):
             "dependencies": {
                 name: importlib.metadata.version(name) for name in ("aiohttp", "numpy", "tqdm")
             },
-            "quality_status": "not_implemented",
+            "quality_status": "not_scored",
             "correctness": "outside_client_scope",
         }
     manifest["finished_at"] = None
@@ -247,6 +256,10 @@ def main(argv=None):
         print(dumps(result))
     else:
         print(f"Report: {args.output_dir / 'summary.md'}")
+    quality_file = args.output_dir / "quality.json"
+    if args.phase in ("score", "report") and quality_file.exists():
+        if read_json(quality_file)["status"] != "complete":
+            return 1
     if isinstance(result, dict) and any(
         isinstance(v, dict) and (v.get("failed") or v.get("not_attempted")) for v in result.values()
     ):

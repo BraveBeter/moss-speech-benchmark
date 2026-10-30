@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moss-speech-benchmark"
-version = "0.1.0"
+version = "0.2.0"
 description = "Standalone MOSS-Speech chat performance benchmark"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -14,7 +14,11 @@ dependencies = ["aiohttp>=3.9,<4", "numpy>=1.24,<3", "tqdm>=4.66,<5"]
 
 [project.optional-dependencies]
 hf = ["datasets>=3"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "build"]
+quality = ["jiwer>=4,<5", "zhon>=2,<3", "openai-whisper", "soundfile", "scipy"]
+sim = ["torch", "s3prl", "soundfile", "scipy"]
+utmos = ["torch", "torchaudio"]
+zh = ["funasr"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "build", "jiwer>=4,<5", "zhon>=2,<3"]
 
 [project.scripts]
 moss-speech-bench = "moss_speech_bench.cli:main"

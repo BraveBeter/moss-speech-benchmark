@@ -76,7 +76,7 @@ async def test_contract_rejects_subset_and_unsupported_score(server, tmp_path):
     config = workload(tmp_path)
     for extra, message in [
         (("--mode", "daily"), "5279"),
-        (("--phase", "all"), "not implemented"),
+        (("--phase", "all"), "separate infer and score"),
         (("--concurrency", "0"), "positive"),
     ]:
         with pytest.raises(ValueError, match=message):
@@ -182,8 +182,8 @@ async def test_installed_cli_exit_codes_and_offline_report(server, tmp_path):
     assert code == 1, error  # failed request must not become a successful shell command
     code, stdout, error = await invoke("--phase", "report", "--output-dir", str(output))
     assert code == 1 and "Report:" in stdout, error
-    code, _, error = await invoke("--phase", "score", "--output-dir", str(output))
-    assert code == 2 and "not implemented" in error
+    code, _, error = await invoke("--phase", "all", "--output-dir", str(output))
+    assert code == 2 and "separate infer and score" in error
 
 
 async def test_daily_and_full_counts_without_service(tmp_path):
