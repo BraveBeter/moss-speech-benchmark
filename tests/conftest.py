@@ -15,6 +15,11 @@ async def server():
     async def handle(request):
         payload = await request.json()
         state["payloads"].append(payload)
+        # MOSS accepts request-level format controls only on streaming requests.
+        if payload.get("audio") and not payload["stream"]:
+            return web.json_response(
+                {"error": "request-level audio configuration unsupported"}, status=400
+            )
         text = str(payload["messages"])
         if "HTTP_FAIL" in text:
             return web.json_response({"error": "deliberate failure"}, status=503)

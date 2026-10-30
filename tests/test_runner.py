@@ -221,3 +221,14 @@ async def test_daily_and_full_counts_without_service(tmp_path):
         args(path, "http://127.0.0.1:1", tmp_path / "unused", "--mode", "full", "--dry-run")
     )
     assert result["formal_requests"] == 39108
+
+
+async def test_buffered_audio_uses_server_default_format(server, tmp_path):
+    url, state = server
+    config = workload(tmp_path)
+    metrics = await run(args(config, url, tmp_path / "buffered", "--no-stream"))
+    result = next(iter(metrics.values()))
+    assert result["succeeded"] == 3 and result["failed"] == 0
+    assert result["audio_ttfp_mean_s"] is None
+    assert result["audio_duration_mean_s"] == 0.1
+    assert all("audio" not in payload for payload in state["payloads"])

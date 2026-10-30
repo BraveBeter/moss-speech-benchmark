@@ -74,7 +74,7 @@ moss-speech-bench --mode full --config examples/daily.json --model moss-speech \
 
 延迟、TTFA、TTFT、RTF 保存 Mean/P50/P95/P99；分位数按单个数据集/并发/重复统计，不混合多个重复。成功请求用于这些分布，失败数和失败率单独保留。`finish_reason=length` 作为完成请求计入，但在 `length_count` 单列，不能解释成质量成功。
 
-流式输出按 PCM16 little-endian、单声道解析，默认 24 kHz（可用 `--sample-rate` 显式声明）；应与服务配置一致。非流式解析 PCM16 WAV，TTFA/TTFT 为 N/A。音频时长以实际字节数计算，WAV 保留无损 PCM。
+流式输出按 PCM16 little-endian、单声道解析，默认 24 kHz（可用 `--sample-rate` 显式声明）；应与服务配置一致。非流式使用服务默认 WAV 格式，不发送请求级 `audio` 配置；解析 PCM16 WAV，TTFA/TTFT 为 N/A。音频时长以实际字节数计算，WAV 保留无损 PCM。
 
 正式墙钟包括请求派发、网络、解码和输出写盘；每请求延迟在写盘之前截止。文件 I/O 移至线程，避免直接阻塞其他请求的网络读取，但客户端 CPU/磁盘仍可能限制吞吐，应保持对照环境一致。`engine_time_s` 是复用数据结构中的请求耗时代理，不是服务端纯计算时间。当前不提供 token 间隔或 engine RTF。
 

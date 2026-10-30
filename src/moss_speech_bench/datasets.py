@@ -122,8 +122,8 @@ def prepare_dataset(spec, root, *, model, stream, sampling):
             modalities=["audio" if task.endswith("s") else "text"],
             stream=stream,
         )
-        if task.endswith("s"):
-            payload["audio"] = {"format": "pcm" if stream else "wav"}
+        if task.endswith("s") and stream:
+            payload["audio"] = {"format": "pcm"}
         prepared.append(
             {
                 "id": sample_id,
