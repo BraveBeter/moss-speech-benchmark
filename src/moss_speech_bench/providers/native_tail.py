@@ -114,15 +114,44 @@ def run(output):
                     try:
                         plan = diagnostic.DirectLtProjection(weight, bias, rows, profile=profile)
                         generator = torch.Generator(device="cuda").manual_seed(20261031 + rows)
-                        value = torch.randn(
-                            (2, rows // 2, width),
+                        is_tail = rows in (224, 240, 288, 440)
+                        full_length = 1280 + rows // 2 if is_tail else rows // 2
+                        full_input = torch.randn(
+                            (2, full_length, width),
                             generator=generator,
                             device="cuda",
                             dtype=torch.float32,
                         )
-                        reference = torch.nn.functional.linear(value, weight, bias)
+                        full_reference = torch.nn.functional.linear(full_input, weight, bias)
+                        if is_tail:
+                            value = full_input[:, 1280:, :].contiguous()
+                            reference = full_reference[:, 1280:, :].contiguous()
+                        else:
+                            value = full_input
+                            reference = full_reference
+                        result.update(
+                            reference_kind="slice-of-native-full-affine"
+                            if is_tail
+                            else "native-full-affine",
+                            full_input_shape=list(full_input.shape),
+                            native_tail_standalone_equal=bool(
+                                torch.equal(
+                                    torch.nn.functional.linear(value, weight, bias), reference
+                                )
+                            ),
+                        )
                         candidate = plan.run(value).clone()
                         torch.cuda.synchronize()
+                        tensor_prefix = f"{profile}-k{width}-rows{rows}"
+                        for label, tensor in (("candidate", candidate), ("reference", reference)):
+                            (output / f"{tensor_prefix}-{label}.f32").write_bytes(
+                                tensor.contiguous().view(torch.uint8).cpu().numpy().tobytes()
+                            )
+                        result.update(
+                            tensor_prefix=tensor_prefix,
+                            tensor_shape=list(candidate.shape),
+                            tensor_dtype="float32",
+                        )
                         result.update(
                             api_success=True,
                             exact=bool(
