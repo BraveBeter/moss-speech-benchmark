@@ -68,6 +68,14 @@ try:
             v != "passed" for v in plugin.outcomes.values()
         ):
             status = 1
+        if (
+            status == 0
+            and mode == "C03"
+            and os.environ.get("MOSS_CORRECTNESS_PROFILE") == "native-tail-research"
+        ):
+            from native_tail import run
+
+            run(output)
     else:
         if mode in ("C04", "C05", "C06"):
             assert os.environ.get("SLURM_JOB_ID"), "GPU provider requires an allocated Slurm job"

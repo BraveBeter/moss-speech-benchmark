@@ -395,3 +395,32 @@ def test_native_profile_keeps_base_identity_strict(tmp_path):
     for gate in ("C01", "C03"):
         assert not set(selection[gate]) & set(selection[gate + "-native-norm"])
         assert len(selection[gate + "-native-norm"]) == 1
+
+
+async def test_native_tail_research_cannot_open_http_gates(tmp_path, monkeypatch):
+    import moss_speech_bench.correctness as correctness
+
+    config = dict(
+        profile="native-tail-research",
+        core_sha=BASE,
+        workspace_root=".",
+        native_tail_source="/explicit/reference.py",
+        native_tail_abi="/explicit/header-abi.so",
+    )
+    path = tmp_path / "suite.json"
+    write_json(path, config)
+    calls = []
+
+    async def unsupported(gate, config, output):
+        calls.append(gate)
+        return dict(status="unsupported", reason="Current algorithm not qualified")
+
+    async def forbidden_http(*args):
+        raise AssertionError("Research must not admit HTTP certification")
+
+    monkeypatch.setattr(correctness, "provider", unsupported)
+    monkeypatch.setattr(correctness, "run_http", forbidden_http)
+    result = await correctness.run_correctness(path, tmp_path / "result", "C03,C07")
+    assert result["status"] == "incomplete" and calls == ["C03"]
+    assert result["gates"]["C03"]["status"] == "unsupported"
+    assert result["gates"]["C07"]["status"] == "not_run"

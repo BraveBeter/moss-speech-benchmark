@@ -43,6 +43,13 @@ def load_suite(path):
     if config.get("profile") == "eager-base":
         if config.get("core_sha") != BASE or config.get("native_norm_library") is not None:
             raise ValueError("eager-base profile requires the fixed base SHA and original norm")
+    elif config.get("profile") == "native-tail-research":
+        if config.get("core_sha") != BASE or not all(
+            config.get(k) for k in ("native_tail_source", "native_tail_abi")
+        ):
+            raise ValueError(
+                "native-tail research requires the fixed base and explicit source/header ABI library"
+            )
     elif config.get("profile") == "native-norm":
         if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
             raise ValueError("native-norm requires an explicit full candidate SHA")
@@ -116,6 +123,10 @@ def preflight(config):
     full = read_json(config["golden"]["C06"]["report"])
     assert full["code_profile_sha256"] == file_hash(config["code_profile"])
     assert full["voice_conditioning"]["voice_input_sha256"] == file_hash(config["voice_wav"])
+    if config["profile"] == "native-tail-research":
+        assert all(
+            Path(config[k]).resolve() in listed for k in ("native_tail_source", "native_tail_abi")
+        ), "Unpinned native-tail research inputs"
     if config["profile"] == "native-norm":
         library = Path(config["native_norm_library"]).resolve()
         assert library in listed, "Native library must be in the pinned asset allowlist"
@@ -225,6 +236,9 @@ async def provider(gate, config, output):
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
         MOSS_NATIVE_NORM_LIBRARY=config.get("native_norm_library", ""),
+        MOSS_NATIVE_TAIL_SOURCE=config.get("native_tail_source", ""),
+        MOSS_NATIVE_TAIL_ABI=config.get("native_tail_abi", ""),
+        MOSS_CODEC_PATH=config["codec_path"],
         PYTHONPATH=config["core_root"],
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
@@ -316,6 +330,12 @@ async def provider(gate, config, output):
     else:
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
+        )
+    if gate == "C03" and config["profile"] == "native-tail-research":
+        research = read_json(output / "native-tail-research.json")
+        assert research["status"] == "unsupported" and research["total_cases"] == 32
+        return dict(
+            status="unsupported", reason=research["reason"], checks=checks, research=research
         )
     return dict(status="pass", checks=checks, exit_code=process.returncode)
 
