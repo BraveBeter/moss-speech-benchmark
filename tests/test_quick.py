@@ -305,3 +305,44 @@ async def test_declared_server_must_match_correctness_candidate(
     with pytest.raises(ValueError, match="correctness candidate SHA"):
         await run(a)
     assert not state["payloads"] and correctness_stub["calls"] == 0
+
+
+async def test_task_prompt_override_preserves_speech_cohort_and_rejects_resume(
+    server, tmp_path, correctness_stub
+):
+    """Explicit text mode must not replace the S2S system prompt or hide failed rows."""
+    url, state = server
+    config = daily_workload(tmp_path)
+    before, _, _ = load_workload(config, "test", True, "quick")
+    value = read_json(config)
+    prompt = {"name": "explicit-text-v1", "system": "Respond with text outputs."}
+    value["task_prompts"] = {"s2t": prompt}
+    write_json(config, value)
+    after, _, _ = load_workload(config, "test", True, "quick")
+    for name in QA_DATASETS:
+        assert after[name + "-s2s"] == before[name + "-s2s"]
+        old, new = before[name + "-s2t"], after[name + "-s2t"]
+        assert old[1]["selection"] == new[1]["selection"]
+        assert old[1]["samples_hash"] != new[1]["samples_hash"]
+        for left, right in zip(old[0], new[0], strict=True):
+            assert left["id"] == right["id"] and left["expected"] == right["expected"]
+            assert left["payload"]["messages"][1:] == right["payload"]["messages"][1:]
+            assert right["payload"]["messages"][0]["content"] == prompt["system"]
+    correctness_stub["url"] = url
+    options = args(
+        config, url, tmp_path / "quick", "--mode", "quick", "--correctness-config", "fixture.json"
+    )
+    metrics = await run(options)
+    assert len(state["payloads"]) == 120
+    assert sum(item["attempted"] for item in metrics.values()) == 120
+    assert all(item["succeeded"] == 20 for item in metrics.values())
+    value.pop("task_prompts")
+    write_json(config, value)
+    options.resume = True
+    with pytest.raises(ValueError, match="contract mismatch"):
+        await run(options)
+    for invalid in ([], {"t2t": prompt}, {"s2t": "text"}):
+        value["task_prompts"] = invalid
+        write_json(config, value)
+        with pytest.raises(ValueError, match="task_prompts"):
+            load_workload(config, "test", True, "quick")

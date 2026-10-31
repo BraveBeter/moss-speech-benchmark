@@ -199,6 +199,14 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
     if not specs or len(set(ids)) != len(ids):
         raise ValueError("Dataset IDs must be nonempty and unique")
     named = mode in ("quick", "daily", "full")
+    task_prompts = config.get("task_prompts", {})
+    if (
+        not isinstance(task_prompts, dict)
+        or set(task_prompts) - set(QA_TASKS)
+        or any(not isinstance(prompt, dict) for prompt in task_prompts.values())
+        or (task_prompts and not named)
+    ):
+        raise ValueError("task_prompts requires named speech-QA tasks mapped to prompt objects")
     if tasks is not None and not named:
         raise ValueError("Task selection is only supported in named speech-QA suites")
     if mode == "quick" and (type(subset_size) is not int or not 20 <= subset_size <= 50):
@@ -225,7 +233,10 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
         for task in selected_tasks if named else [spec["task"]]:
             resolved = dict(spec, task=task)
             if named:
-                resolved.setdefault("prompt", SHORT_ANSWER_PROMPT)
+                if task in task_prompts:
+                    resolved["prompt"] = task_prompts[task]
+                else:
+                    resolved.setdefault("prompt", SHORT_ANSWER_PROMPT)
             rows, metadata = prepare_dataset(
                 resolved,
                 path.parent,

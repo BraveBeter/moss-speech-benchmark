@@ -135,3 +135,16 @@ python -m build
 历史运行`eager-base-quick-20261031`与`quality-diagnosis-20261031`保持原始身份；其Seed聊天朗读与StoryCloze不属于当前套件，旧30分钟目标也不适用于新配置。
 
 全部本地结果从`$MOSS_BENCHMARK_RESULTS_ROOT/README.md`查看，各run只打开其`summary.md`；运行目录不纳入客户端Git。历史脚本/绝对路径保留执行时身份，迁移后的当前位置以结果索引及迁移清单为准。
+
+Named speech-QA workload JSON may set `task_prompts` to override the system prompt for one task. The following entry leaves S2S and all selected question IDs unchanged:
+
+```json
+"task_prompts": {
+  "s2t": {
+    "name": "spoken-qa-explicit-text-en-v1",
+    "system": "You are a helpful assistant. Respond with text outputs.\nAnswer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+  }
+}
+```
+
+Each task prompt overrides any dataset prompt. Its prepared payload and prompt hashes remain in the measurement contract; changing them requires a fresh output and a matching new performance baseline. Empty-output failure rules remain unchanged.
