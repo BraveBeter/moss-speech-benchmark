@@ -519,5 +519,11 @@
     "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent",
     "tests/unit_test/moss_speech/test_sampling.py::test_cuda_request_rng_accepts_the_full_torch_seed_range[-1]",
     "tests/unit_test/moss_speech/test_sampling.py::test_cuda_request_rng_accepts_the_full_torch_seed_range[9223372036854775815]"
+  ],
+  "C01-native-norm": [
+    "tests/unit_test/moss_speech/test_model.py::test_native_norm_cpu_and_grad_fallback"
+  ],
+  "C03-native-norm": [
+    "tests/unit_test/moss_speech/test_model.py::test_native_norm_cuda_rounding_and_fallback"
   ]
 }

@@ -123,3 +123,6 @@ single/dual-service C07–C08 have not been rerun by this integration. Historica
 successes are preserved as historical evidence, not new acceptance results.
 
 正确性阶段也必须归入工作区`benchmark-results/<run_id>/correctness/`，与同次性能/质量结果共用run根。只运行正确性时，在run根保留简短summary.md入口，详细断言仍在correctness/correctness.md；不向.audit或源码仓库另存报告。
+
+
+The explicit native-norm profile accepts a full clean descendant SHA of the fixed base and an operator-built library pinned by the same asset allowlist and deployment SHA256. It preserves all C00–C08 base checks, numerical thresholds and golden identities; C01/C03 append fixed norm fallback/actual-CUDA qualification cases. C04 installs the same norm library on the candidate model before its full-vocabulary comparison. A successful eager-base certificate does not qualify the native-norm profile, and profile/library changes invalidate resume identity. Native service manifests must enable this exact library independently; the client never enables a service feature by changing its own environment.

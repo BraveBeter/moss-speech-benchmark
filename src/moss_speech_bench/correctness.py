@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import os
+import re
 import signal
 import subprocess
 from pathlib import Path
@@ -39,9 +40,15 @@ def load_suite(path):
         return value
 
     config = resolve(config)
-    if config.get("core_sha") != BASE:
-        raise ValueError("eager-base profile requires the fixed base SHA")
-    if config.get("profile") != "eager-base":
+    if config.get("profile") == "eager-base":
+        if config.get("core_sha") != BASE or config.get("native_norm_library") is not None:
+            raise ValueError("eager-base profile requires the fixed base SHA and original norm")
+    elif config.get("profile") == "native-norm":
+        if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
+            raise ValueError("native-norm requires an explicit full candidate SHA")
+        if not config.get("native_norm_library"):
+            raise ValueError("native-norm requires an explicit native library")
+    else:
         raise ValueError("Unknown correctness profile")
     return config
 
@@ -52,7 +59,8 @@ def preflight(config):
     def git(*args):
         return subprocess.check_output(["git", "-C", str(core), *args], text=True).strip()
 
-    assert git("rev-parse", "HEAD") == BASE, "Candidate SHA mismatch"
+    assert git("rev-parse", "HEAD") == config["core_sha"], "Candidate SHA mismatch"
+    assert git("merge-base", BASE, config["core_sha"]) == BASE, "Candidate must descend from base"
     assert not git("status", "--porcelain"), "Candidate worktree must be clean"
     verified = []
     assert config["assets"], "Asset/golden allowlist is required"
@@ -108,8 +116,15 @@ def preflight(config):
     full = read_json(config["golden"]["C06"]["report"])
     assert full["code_profile_sha256"] == file_hash(config["code_profile"])
     assert full["voice_conditioning"]["voice_input_sha256"] == file_hash(config["voice_wav"])
+    if config["profile"] == "native-norm":
+        library = Path(config["native_norm_library"]).resolve()
+        assert library in listed, "Native library must be in the pinned asset allowlist"
+        assert config["deployment"].get("native_norm_library_sha256") == file_hash(library)
     deployment = config.get("deployment", {})
-    assert deployment.get("core_sha") == BASE and deployment.get("gpu_count") in (1, 2)
+    assert deployment.get("core_sha") == config["core_sha"] and deployment.get("gpu_count") in (
+        1,
+        2,
+    )
     assert deployment.get("ar_tp") == 1 and deployment.get("ar_graph") is False
     assert deployment.get("voice_sha256") == file_hash(config["voice_wav"])
     fixed = dict(
@@ -131,7 +146,7 @@ def preflight(config):
     return dict(
         status="pass",
         checks=[dict(id="identity-assets-golden", status="pass")],
-        identity=dict(core_sha=BASE, core_root=str(core), client=source_identity()),
+        identity=dict(core_sha=config["core_sha"], core_root=str(core), client=source_identity()),
         assets=verified,
         deployment=deployment,
         lineage="Independent HF golden reuse; candidate results are new executions",
@@ -208,6 +223,8 @@ async def provider(gate, config, output):
         MOSS_AUDIO_CN=config["audio_zh"],
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
+        MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_NATIVE_NORM_LIBRARY=config.get("native_norm_library", ""),
         PYTHONPATH=config["core_root"],
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
@@ -284,7 +301,10 @@ async def provider(gate, config, output):
     assert read_json(output / "origins.json"), "Provider import origins missing"
     if gate in ("C01", "C03"):
         report = read_json(output / "coverage.json")
-        expected = read_json(PROVIDERS / "selection.json")[gate]
+        selection = read_json(PROVIDERS / "selection.json")
+        expected = selection[gate] + (
+            selection[gate + "-native-norm"] if config["profile"] == "native-norm" else []
+        )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
         )
@@ -320,7 +340,7 @@ def render_correctness(root):
     status = "fail" if "fail" in states else "pass" if states == ["pass"] * 9 else "incomplete"
     assert manifest["status"] == status, "Summary inconsistent with required gates"
     lines = [
-        "# Eager-base correctness",
+        "# MOSS correctness",
         "",
         f"Status: {status}",
         "",

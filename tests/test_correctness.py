@@ -354,3 +354,44 @@ def test_terminal_trace_preserves_grid_and_rejects_path_traversal(tmp_path, monk
     with pytest.raises(ValueError, match="Invalid trace"):
         write_trace("../escape", "ar", {})
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_native_profile_keeps_base_identity_strict(tmp_path):
+    from moss_speech_bench.correctness import load_suite
+
+    path = tmp_path / "suite.json"
+
+    def configured(**changes):
+        write_json(path, dict(profile="eager-base", core_sha=BASE, workspace_root=".", **changes))
+        return path
+
+    assert load_suite(configured())["core_sha"] == BASE
+    with pytest.raises(ValueError, match="original norm"):
+        load_suite(configured(native_norm_library="/explicit/native.so"))
+    write_json(
+        path,
+        dict(
+            profile="native-norm",
+            core_sha="main",
+            workspace_root=".",
+            native_norm_library="/explicit/native.so",
+        ),
+    )
+    with pytest.raises(ValueError, match="full candidate SHA"):
+        load_suite(path)
+    write_json(
+        path,
+        dict(
+            profile="native-norm",
+            core_sha="a" * 40,
+            workspace_root=".",
+            native_norm_library="/explicit/native.so",
+        ),
+    )
+    assert load_suite(path)["core_sha"] == "a" * 40
+    from moss_speech_bench.correctness import PROVIDERS
+
+    selection = read_json(PROVIDERS / "selection.json")
+    for gate in ("C01", "C03"):
+        assert not set(selection[gate]) & set(selection[gate + "-native-norm"])
+        assert len(selection[gate + "-native-norm"]) == 1

@@ -249,6 +249,18 @@ def run(
             schema = {}
             model.load_weights(stream_weights(model_path, schema))
             model.assert_heads_independent()
+            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "native-norm":
+                from sglang_omni.models.moss_speech.model_layers import MossSpeechRMSNorm
+                from sglang_omni.models.moss_speech.native_norm import NativeNorm
+
+                native_norm = NativeNorm(os.environ["MOSS_NATIVE_NORM_LIBRARY"])
+                for module in model.modules():
+                    if isinstance(module, MossSpeechRMSNorm):
+                        module.native_norm = native_norm
+                report["native_norm_library"] = dict(
+                    path=os.environ["MOSS_NATIVE_NORM_LIBRARY"],
+                    sha256=digest(Path(os.environ["MOSS_NATIVE_NORM_LIBRARY"])),
+                )
             assert len(schema) == 446
             parameter_count = sum(
                 parameter.numel()

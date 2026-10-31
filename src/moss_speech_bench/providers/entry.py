@@ -34,7 +34,12 @@ try:
     if mode in ("C01", "C03"):
         import pytest
 
-        expected = json.loads(Path(__file__).with_name("selection.json").read_text())[mode]
+        selection = json.loads(Path(__file__).with_name("selection.json").read_text())
+        expected = selection[mode] + (
+            selection[mode + "-native-norm"]
+            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "native-norm"
+            else []
+        )
 
         class Coverage:
             def __init__(self):
