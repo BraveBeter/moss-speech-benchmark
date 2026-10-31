@@ -115,3 +115,5 @@ C00–C08全部通过，加上HF原版也有相同类别的任务失败，支持
 参考环境/端点排错记录全部保留：77814缺streamer兼容/TorchCodec，77815未设整数min_new_tokens，77816错误使用tokenizer pad导致空Codes，77817在错误pad配置完成前主动取消。77818才是正式24条成功配对；77819完成评分。上述失败属于参考环境/诊断工具，不计作模型质量样本。PCM I/O适配、Transformers版本和显式生成参数均已披露，不声称原依赖环境完全未改动。
 
 七个GPU作业均终态；自有正常退出服务组检查均active=[]，取消的77817在节点查询已无作业进程。包含所有失败/取消，本轮1320GPU秒（0.366667卡时），累计10.551111/50卡时，余39.448889。没有恢复Daily/Full，没有修改或推送模型分支。
+
+最终产物复核：24条生成结果的72个输出文件hash、全部PCM时长及质量聚合通过；重生成质量报告后原performance.json保持不变。HF实际计算源码与固定checkpoint对应文件逐一hash相同。Transformers动态加载器按其`create_dynamic_module`实现生成空`__init__.py`，与checkpoint仅导出类的包初始化文件不同；此项单独记录在verification.json，不将其误报为计算源码改写。客户端46项本地测试通过、3项可选Torch数值环境测试skip；Ruff/格式、wheel/sdist内容检查通过。
