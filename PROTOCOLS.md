@@ -7,7 +7,7 @@ protocol changes create a new baseline. A completed score is not a quality pass.
 ## Text to speech
 
 The default `moss-chat-v1` asks a dialogue model to read text, followed by its
-trained default system turn. This is an instruction-following engineering test.
+checkpoint default system turn. This is an instruction-following engineering test.
 It is not the paper's isolated speech-decoder evaluation or SeedTTS voice cloning.
 
 A dataset may explicitly declare a versioned prompt:
@@ -87,3 +87,17 @@ minimum output and matches the eager request’s unrestricted minimum.
 The HF adapter uses `model.config.modality_pad_token_id` for audio masking, while EOS uses tokenizer end tokens. Substituting the
 tokenizer padding ID for the modality pad would stop audio after its first code.
 Failed adapter attempts are retained as tool failures, not model-quality evidence.
+
+## Candidate configuration
+
+`examples/daily-protocol-candidate.json` preserves the Daily datasets, counts and
+sampling while explicitly selecting system-first read/short-answer prompts.
+Fill its data paths and immutable revisions as for `daily.json`. It is a protocol
+candidate, not a claim that all 5,279 cases have passed. Use a new output directory
+and compare against a baseline generated with that same protocol. The original
+`daily.json` and its default prompts are retained for reproducibility.
+
+For speech QA, enable `qa_answer_mention` in a copy of the scoring config only
+when the additional diagnostic is wanted; whole-answer EM remains mandatory.
+A future semantic QA evaluator must preserve its model/prompt version, per-case
+judgment and validation against manually labeled answers before formal adoption.

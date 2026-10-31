@@ -187,7 +187,7 @@ def report(directory, baseline=None, allow_difference=()):
         "",
         f"Mode: {manifest['contract']['mode']}; state: {manifest['state']}. Quick results are a fixed subset, not full Daily coverage.",
         "",
-        "Quality: see offline quality section when scored. Model correctness: outside client scope.",
+        "Quality: see offline quality section when scored. Correctness: see the separate correctness phase report.",
         "",
         "TTFA = first nonempty PCM SSE event (audio_ttfp_*); native TTFC and server GPU peak: N/A.",
         "Each row is one continuous dataset/concurrency/repeat; percentiles are not pooled across repeats.",
