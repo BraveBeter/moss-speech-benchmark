@@ -196,6 +196,9 @@ async def test_named_gate_blocks_http_and_proof_is_required(server, tmp_path, co
     )
     assert (await run(a))["correctness"]["failed"]
     assert not state["payloads"] and not (a.output_dir / "manifest.json").exists()
+    blocked_summary = (a.output_dir / "summary.md").read_text()
+    assert "被测服务代码：分支 `未记录`" in blocked_summary
+    assert "评测客户端代码：分支" in blocked_summary
     correctness_stub["status"] = "pass"
     a.output_dir = tmp_path / "passed"
     await run(a)

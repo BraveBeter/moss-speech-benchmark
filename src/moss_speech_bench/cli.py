@@ -21,7 +21,7 @@ from .datasets import (
     deferred_evaluations,
     load_workload,
 )
-from .reporting import collect_cell, report
+from .reporting import code_identity_lines, collect_cell, report
 from .storage import dumps, read_json, source_identity, write_json
 
 
@@ -241,7 +241,13 @@ async def run(args):
         correctness_elapsed = time.monotonic() - gate_start
         if suite["status"] != "pass":
             (args.output_dir / "summary.md").write_text(
-                "# Correctness blocked inference\n\nNo formal requests were sent. "
+                "# Correctness blocked inference\n\n"
+                + "\n".join(
+                    code_identity_lines(
+                        {"contract": {"deployment": deployment}, "client": source_identity()}
+                    )
+                )
+                + "\nNo formal requests were sent. "
                 "See correctness/correctness.md.\n"
             )
             return {"correctness": {"failed": 1}}

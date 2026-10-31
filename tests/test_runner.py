@@ -267,3 +267,65 @@ async def test_deferred_decoder_is_not_a_full_pass(server, tmp_path):
     )
     _, error = await process.communicate()
     assert process.returncode == 1, error.decode()
+
+
+async def test_summary_uses_frozen_server_and_client_identities(server, tmp_path, monkeypatch):
+    import hashlib
+
+    from moss_speech_bench import cli
+
+    server_sha, client_sha = "a" * 40, "b" * 40
+    monkeypatch.setattr(
+        cli,
+        "source_identity",
+        lambda: dict(source_hash="fixed", branch="client-at-infer", commit=client_sha, dirty=""),
+    )
+    metadata = tmp_path / "deployment.json"
+    write_json(metadata, {"server": dict(commit=server_sha, dirty=True)})
+    output = tmp_path / "run"
+    await run(args(workload(tmp_path), server[0], output, "--deployment", str(metadata)))
+    summary = (output / "summary.md").read_text()
+    assert f"被测服务代码：分支 `未记录`；commit `{server_sha}`；工作区：有未提交修改。" in summary
+    assert (
+        f"评测客户端代码：分支 `client-at-infer`；commit `{client_sha}`；工作区：干净。" in summary
+    )
+    performance = (output / "performance.json").read_bytes()
+    frozen_manifest = (output / "manifest.json").read_bytes()
+    # Historical supplement is bound to the original manifest; numeric evidence stays frozen.
+    identity = output / "execution" / "records" / "code-identity.json"
+    supplement = dict(
+        manifest_sha256=hashlib.sha256(frozen_manifest).hexdigest(),
+        server={"branch": "server-at-infer"},
+    )
+    write_json(identity, supplement)
+    monkeypatch.setattr(cli, "source_identity", lambda: pytest.fail("Report read current Git"))
+    report(output)
+    assert (
+        f"被测服务代码：分支 `server-at-infer`；commit `{server_sha}`"
+        in (output / "summary.md").read_text()
+    )
+    assert (output / "manifest.json").read_bytes() == frozen_manifest
+    assert (output / "performance.json").read_bytes() == performance
+    rebuilt = (output / "summary.md").read_bytes()
+    report(output)
+    assert (output / "summary.md").read_bytes() == rebuilt
+    supplement["server"]["commit"] = "c" * 40
+    write_json(identity, supplement)
+    with pytest.raises(ValueError, match="Conflicting saved code identity"):
+        report(output)
+    supplement["manifest_sha256"] = "invalid"
+    write_json(identity, supplement)
+    with pytest.raises(ValueError, match="manifest hash mismatch"):
+        report(output)
+
+
+def test_summary_identifies_unknown_wheel_and_detached_checkout():
+    from moss_speech_bench.reporting import code_identity_lines
+
+    text = "\n".join(code_identity_lines({"client": {"source_hash": "wheel-source"}}))
+    assert "被测服务代码：分支 `未记录`；commit `未记录`；工作区：未记录。" in text
+    assert "source_hash `wheel-source`" in text
+    text = "\n".join(
+        code_identity_lines({"client": dict(branch="", commit="d" * 40, dirty=" M file.py")})
+    )
+    assert "分支 `detached HEAD`" in text and "工作区：有未提交修改" in text

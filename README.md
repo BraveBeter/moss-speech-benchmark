@@ -85,6 +85,8 @@ moss-speech-bench --phase report --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base
 
 [deployment.example.json](examples/deployment.example.json)由服务启动方填写：实际源码提交/dirty、权重版本/hash、GPU/软件版本、dtype/kernel/cache/chunk/voice/调度；不以客户端本机信息冒充远端部署。
 
+每份 `summary.md` 开头分别显示**被测服务代码**与**评测客户端代码**的运行时分支、完整 commit SHA 和工作区状态。服务身份使用 `--deployment` 的 `server.branch/commit/dirty`；客户端身份在推理时冻结。离线重建报告不读取当前 checkout；字段缺失显示“未记录”，wheel 无 Git 信息时另列 source_hash。 detached HEAD 明确标注。历史身份可在所属 run 的 `execution/records/code-identity.json` 补记 `server`/`client` 和证据来源，须以 `manifest_sha256` 绑定原 manifest，不能覆盖已记录的身份或修改原评测数据。
+
 Quick目标为包含前置正确性、推理、评分及服务准备在内约40分钟。默认infer调用预算2040秒（34分，含此调用中的正确性）、score预算180秒（3分），为外层准备留约3分；`--time-budget SECONDS`覆盖当前阶段。外层预先执行的gate、服务启动/排队不由客户端控制，必须在实际总时间中计入；单次评分模型调用也可能超过软预算。不能承诺所有硬件/首次编译都达标。需要硬截止时由外层Slurm时限控制；未完成一律partial，不以取消样本制造通过。
 
 可用`--samples-per-dataset 30`改成180请求，50改成300请求，40分钟目标需按实际负载重验。采样/最大输出预算保留配置值，不暗中减少生成长度。

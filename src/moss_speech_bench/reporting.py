@@ -161,9 +161,46 @@ def _load_manifest(root):
     return manifest
 
 
+def code_identity_lines(manifest, supplement=None):
+    """Display frozen run identities, never the checkout rebuilding the report."""
+    supplement = supplement or {}
+    deployment = manifest.get("contract", {}).get("deployment") or {}
+    identities = {
+        "被测服务代码": deployment.get("server") or {},
+        "评测客户端代码": manifest.get("client") or {},
+    }
+    lines = []
+    for label, key in (("被测服务代码", "server"), ("评测客户端代码", "client")):
+        identity = dict(identities[label])
+        for field, value in supplement.get(key, {}).items():
+            if identity.get(field) is not None and identity[field] != value:
+                raise ValueError(f"Conflicting saved code identity: {key}.{field}")
+            identity[field] = value
+        branch = identity.get("branch") or (
+            "detached HEAD" if identity.get("branch") == "" else "未记录"
+        )
+        dirty = identity.get("dirty")
+        state = "未记录" if dirty is None else "有未提交修改" if dirty else "干净"
+        line = f"{label}：分支 `{branch}`；commit `{identity.get('commit') or '未记录'}`；工作区：{state}。"
+        if not identity.get("commit") and identity.get("source_hash"):
+            line += f" source_hash `{identity['source_hash']}`。"
+        lines.extend([line, ""])
+    return lines
+
+
 def report(directory, baseline=None, allow_difference=()):
     root = Path(directory)
     manifest = _load_manifest(root)
+    supplement = None
+    identity_path = root / "execution" / "records" / "code-identity.json"
+    if identity_path.exists():
+        supplement = read_json(identity_path)
+        if (
+            supplement.get("manifest_sha256")
+            != hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest()
+        ):
+            raise ValueError("Supplemental code identity manifest hash mismatch")
+    identity_lines = code_identity_lines(manifest, supplement)
     from .quality import quality_report
 
     quality = quality_report(root)
@@ -206,6 +243,7 @@ def report(directory, baseline=None, allow_difference=()):
     lines = [
         "# MOSS-Speech performance",
         "",
+        *identity_lines,
         f"Mode: {manifest['contract']['mode']}; state: {manifest['state']}. Quick results are a fixed subset, not full Daily coverage.",
         "",
         "Quality: see offline quality section when scored. Correctness: see correctness/correctness.md for named suites.",
