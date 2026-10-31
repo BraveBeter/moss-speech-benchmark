@@ -79,3 +79,7 @@ an explicit, PCM16-only WAV reader with exact int16/32768 normalization. This
 replaces only private-process file I/O, is recorded in lineage, and must not be
 represented as an unmodified dependency environment. Model/processor/generation/
 codec computation and checkpoint source remain unchanged.
+
+The diagnostic greedy configuration explicitly sets `min_new_tokens=0`, as the
+original generation loop compares this field as an integer. This adds no forced
+minimum output and matches the eager request’s unrestricted minimum.
