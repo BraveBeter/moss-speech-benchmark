@@ -1,12 +1,13 @@
 import time
 
 import pytest
+from test_runner import args, workload
+
 from moss_speech_bench.cli import run
 from moss_speech_bench.datasets import DAILY, load_workload
 from moss_speech_bench.quality import quality_report, score
 from moss_speech_bench.reporting import report
 from moss_speech_bench.storage import read_json, write_json
-from test_runner import args, workload
 
 
 def daily_workload(root):

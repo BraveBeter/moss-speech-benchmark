@@ -7,6 +7,7 @@ import wave
 import pytest
 import pytest_asyncio
 from aiohttp import web
+
 from moss_speech_bench.correctness import (
     BASE,
     numerical_checks,

@@ -16,7 +16,7 @@ dependencies = ["aiohttp>=3.9,<4", "numpy>=1.24,<3", "tqdm>=4.66,<5"]
 hf = ["datasets>=3"]
 quality = ["jiwer>=4,<5", "zhon>=2,<3", "openai-whisper", "soundfile", "scipy"]
 sim = ["torch", "s3prl", "soundfile", "scipy"]
-utmos = ["torch", "torchaudio"]
+utmos = ["torch", "torchaudio", "soundfile"]
 zh = ["funasr"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "build", "jiwer>=4,<5", "zhon>=2,<3"]
 

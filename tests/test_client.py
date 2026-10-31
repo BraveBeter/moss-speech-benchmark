@@ -1,5 +1,6 @@
 import aiohttp
 import pytest
+
 from moss_speech_bench.client import ChatClient
 
 

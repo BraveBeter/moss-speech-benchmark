@@ -126,7 +126,7 @@ pytest -q
 python -m build
 ```
 
-本地 HTTP 测试覆盖 UTF-8/SSE 分片、流式/非流式、音频时长、错误/usage、并发/预热、取消/恢复、产物校验、baseline 和安装后的 CLI。这些是客户端测试，不是 MOSS 模型正确性验证。真实 A800 运行、全量数据验收和质量评分仍待后续阶段。
+本地 HTTP 测试覆盖 UTF-8/SSE 分片、流式/非流式、音频时长、错误/usage、并发/预热、取消/恢复、产物校验、baseline 和安装后的 CLI。这些是客户端测试，不是 MOSS 模型正确性验证。eager base 单卡 A800 Quick 已完成真实推理与评分，见[实测报告](reports/eager-base-quick-20261031.md)；Daily/Full 全量和其他部署仍未验收。
 
 ## 离线质量评分
 
@@ -135,26 +135,26 @@ python -m build
 ```bash
 # 选择题文本评分只需基础安装；音频错误率需质量依赖和本地ASR权重
 pip install -e '.[quality]'
-# 按需安装中文ASR、WavLM SIM或UTMOS；Torch与torchaudio应匹配
-pip install -e '.[zh,sim,utmos]'
+# 按需安装WavLM SIM或UTMOS；Torch与torchaudio应匹配
+pip install -e '.[sim,utmos]'
 
 moss-speech-bench --phase score --output-dir results/base-daily \
   --score-config examples/scoring.json
 moss-speech-bench --phase report --output-dir results/base-daily
 ```
 
-[scoring.json](examples/scoring.json) 中的路径须换成本地资产，均相对该配置文件定位。省略某个模型会给对应指标记录unavailable；配置了不存在的文件则报配置错误。默认CPU；使用CUDA需在Slurm作业中运行并遵守资源预算。ASR、SIM和UTMOS不能争用受测服务的GPU。Whisper读WAV通常还需要环境提供ffmpeg。
+[scoring.json](examples/scoring.json) 中的路径须换成本地资产，均相对该配置文件定位。省略某个模型会给对应指标记录unavailable；配置了不存在的文件则报配置错误。SIM和UTMOS默认CPU；使用CUDA需在Slurm作业中运行并遵守资源预算。ASR、SIM和UTMOS不能争用受测服务的GPU。Qwen评分通过HTTP调用外层已启动的ASR服务；`openai-whisper`依赖仅用于英文文本归一化，使用Qwen时不加载Whisper模型。显式旧版Whisper配置读取WAV时通常还需要ffmpeg。
 
 | 任务 | 指标和协议 |
 |---|---|
-| T2S EN | Whisper转录；复用上游EnglishTextNormalizer和jiwer WER |
-| T2S ZH | 本地FunASR/Paraformer转录；复用上游中文标点归一化与逐字CER |
+| T2S EN | Qwen3-ASR服务并发转录；复用CI的EnglishTextNormalizer和jiwer WER |
+| T2S ZH | 同一Qwen3-ASR服务并发转录；复用上游中文标点归一化与逐字CER |
 | T2S SIM | 复用上游WavLM-large SV；固定音色参考，与deployment.settings.voice_reference_sha256核对；输出cosine，原实现的百分值除以100 |
 | T2T | 复用上游选择题答案提取；默认A/B，可配置choices为ABCD等；不能解析计错并记录invalid |
 | S2T / S2S QA | 已保存文本或回答音频ASR；小写、英文标点/冠词/空白归一化后与可接受答案集exact match，工程回归协议 |
 | S2S UTMOS | 复用上游16kHz重采样、PCM16和预测过程；加载本地utmos.jit |
 
-EN Whisper large-v3和ZH Paraformer权重由外层预先准备，客户端不下载评分权重。SIM只支持实际固定音色参考，不使用未传入模型的SeedTTS参考音色；缺少音色身份则SIM unavailable。
+推荐按当前Omni CI由外层准备并启动Qwen/Qwen3-ASR-1.7B服务，默认ASR并发32；客户端不下载权重、不启动评分服务。外层A800部署配置参考[qwen3-asr-server.json](examples/qwen3-asr-server.json)，需替换权重路径。长音频上传上限需匹配客户端并发，分块并发设为1可控制引擎排队；否则超过30秒的回答可能因默认长音频容量不足收到503。服务首次启动可能编译算子，单列其启动耗时。本地Whisper/Paraformer适配保留为显式旧配置兼容入口（Paraformer额外安装`.[zh]`）。SIM只支持实际固定音色参考，不使用未传入模型的SeedTTS参考音色；缺少音色身份则SIM unavailable。
 
 WER/CER报告全部可评分样本的corpus错误率、逐样本均值及评分覆盖率，不排除高错误率样本。Accuracy的主值为正确数/所选集合总条数；另存evaluated_accuracy，未完成/失败样本保留。没有任何可评分样本时值为null。每项指标均记录scored/failed/unavailable/generation_failed/not_attempted数量。length输出参与评分，原finish_reason保留。
 
@@ -164,7 +164,7 @@ WER/CER报告全部可评分样本的corpus错误率、逐样本均值及评分�
 
 baseline比较还会核对评分器源码、模型资产hash、依赖版本、规范化配置和音色身份；完整且约定一致的评分才计算delta，coverage变化不会被当作质量收益。错误率越小越好、Accuracy/SIM/UTMOS越大越好，尚不设置任意质量合格阈值。
 
-本地测试验证评分协议、复用和归档行为；真实Whisper/Paraformer/WavLM/UTMOS权重及全量数据质量尚未验收。
+本地测试验证评分协议、复用和归档行为；Qwen3-ASR、WavLM、UTMOS 已完成单卡 Quick 的真实评分，见[报告与覆盖限制](reports/eager-base-quick-20261031.md)。可选旧版 Whisper/Paraformer 和全量数据质量尚未验收。
 
 正确性入口、C00–C08固定选集、独立HF golden准入及Slurm配置见 [CORRECTNESS.md](CORRECTNESS.md)。
 
@@ -198,3 +198,5 @@ Quick的目标是推理25分钟＋评分5分钟。`--time-budget SECONDS`可分�
 首次数据准备、正在执行的一条ASR/SIM/UTMOS调用、模型加载和磁盘收尾可能超出预算；服务启动/资源调度/手动等待也不计入这两段预算。因此30分钟是目标，尚未通过真实A800实测保证。输出条数、token上限及实时性能仍影响耗时。Quick只用于快速回归和探索；Daily/Full继续负责完整数据集结论，正确性套件仍独立执行。
 
 评分可采用SGLang-Omni CI同源的Qwen3-ASR HTTP流程：asr_en/asr_zh配置backend=qwen3-asr、base_url、model及concurrency（默认32）。客户端并发上传已保存WAV，使用model/language/response_format字段和服务端greedy默认值，缓存完整转录后再离线评分；不重新向MOSS发请求。英文归一化仍复用CI的EnglishTextNormalizer，此处使用其文本规则，不加载Whisper模型。UTMOS的WAV读取使用上游同样支持的soundfile float32方式，避免缺失TorchCodec导致评分失败，重采样和预测算法保持。
+
+2026-10-31单卡A800实测：正式推理1167.58秒＋最终评分61.37秒＝20分29秒，120条全部完成；计入本次启动、排错与重试实际30分55秒，未达到整个流程30分钟目标。两个成功作业的工作时间合计23分14秒仅为分段统计，尚未连续无故障复跑；详见[完整报告](reports/eager-base-quick-20261031.md)。

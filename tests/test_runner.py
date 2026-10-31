@@ -1,4 +1,5 @@
 import pytest
+
 from moss_speech_bench.cli import parser, run
 from moss_speech_bench.reporting import report, summarize
 from moss_speech_bench.storage import read_json, write_json
