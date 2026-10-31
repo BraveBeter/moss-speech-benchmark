@@ -56,3 +56,8 @@ current client rejects chat-based SeedTTS runs and defers isolated Decoder
 quality evaluation. Existing correctness providers and numerical algorithms are
 unchanged; named inference now gates on their complete report and offline
 reporting validates its bound artifacts.
+
+Run artifacts and reports are workspace data under `benchmark-results/<run_id>/`,
+with `summary.md` as the entry point. They are not part of the client source
+repository. Execution evidence and optional detailed analyses stay inside that
+same run directory.

@@ -34,6 +34,14 @@ Quick从三个完整CSV清单选样，先核验300/1000/1000总数与全部ID唯
 
 ## 正确性先行
 
+先设置结果根的绝对路径，避免从不同checkout/worktree启动时写到别处。本节点使用：
+
+```bash
+MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
+```
+
+其他机器仅修改该工作区配置，不把运行位置写死进客户端代码。
+
 Quick、Daily、Full的真实infer都必须提供 [correctness.json](examples/correctness.json) 的本机配置。固定C00–C08全部通过后，才发送任何正式性能请求；失败/缺项/unsupported停止后续推理，不能用 `--checks` 绕过。正确性配置的服务地址必须与受测地址一致。
 
 详细覆盖、独立HF golden与Slurm环境见[CORRECTNESS.md](CORRECTNESS.md)。所有模型测试和fixture仍在目标仓库；客户端通过隔离provider调用，不导入模型计算代码。当前正确性profile限定固定eager base，不能拿它直接认证其他模型配置。
@@ -42,33 +50,35 @@ Quick、Daily、Full的真实infer都必须提供 [correctness.json](examples/co
 
 ```bash
 moss-speech-bench --phase correctness --correctness-config correctness.local.json \
-  --output-dir results/correctness-only
+  --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-only/correctness"
 ```
 
 infer保存正确性JSON的hash，score/report会重新检查九项状态及产物hash。缺失、损坏或过期证明不能继续评分。旧格式历史结果仍可离线重建，不能把其没有前置证明解释为新套件通过。
 
 ## 运行
 
+以下命令在客户端checkout目录执行，输出统一使用上面的绝对结果根；从worktree启动也不改变结果位置。禁止将评测产物保存到`.audit/`或源码仓库中的`reports/`、`results/`。
+
 ```bash
 # 只验证数据和请求规模，不运行正确性、不请求服务
 moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
-  --output-dir results/base-quick --dry-run
+  --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-quick" --dry-run
 
 # 正确性通过后执行120条正式请求
 moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
   --base-url http://127.0.0.1:8000 --deployment deployment.local.json \
-  --correctness-config correctness.local.json --output-dir results/base-quick
+  --correctness-config correctness.local.json --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-quick"
 
 # Daily/Full替换--mode；Full可显式修改扫描规模
 moss-speech-bench --mode full --config examples/daily.json --model moss-speech \
   --base-url http://127.0.0.1:8000 --deployment deployment.local.json \
   --correctness-config correctness.local.json --concurrencies 1,4,8,16 --repeats 3 \
-  --output-dir results/base-full
+  --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-full"
 
 # 外层释放MOSS服务，准备ASR服务后，复用原输出评分
-moss-speech-bench --phase score --output-dir results/base-quick \
+moss-speech-bench --phase score --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-quick" \
   --score-config examples/scoring.json
-moss-speech-bench --phase report --output-dir results/base-quick
+moss-speech-bench --phase report --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-quick"
 ```
 
 `python -m moss_speech_bench`等价。`--base-url`只传HTTP(S)主机与端口，不带`/v1`；密钥用`--api-key-env VARIABLE_NAME`，不进入归档。`all`要求拆分infer/score，避免评分模型争用受测GPU。
@@ -101,7 +111,7 @@ Qwen3-ASR-1.7B统一走官方CI同源HTTP协议，默认并发32；示例外层A
 - Latency：发送请求至完整接收，不含客户端并发排队；RTF：每请求Latency/实际PCM时长；audio-s/s及QPS分别以完整测量段墙钟为分母。保存Mean/P50/P95/P99、length截断、失败/未执行、usage及流式连续性指标。
 - 流式解析PCM16 little-endian单声道，默认24kHz，需与服务一致；非流式按默认WAV协议。事件/输出写盘属于整段墙钟，客户端CPU/磁盘可能限制吞吐。
 
-每个run保存 `manifest.json`、`correctness/`、`inputs/`、分数据集/任务/并发/轮次的`cells/`、`requests.jsonl`、原始文本/WAV/事件、`performance.json`、`quality.json`及`summary.md/json`。Full另显示Codec deferred及不完整状态。性能原始文件不因质量评分而改变。
+每次运行只有一个`benchmark-results/<run_id>/`，以根`summary.md`为唯一主入口。每个run保存 `manifest.json`、`correctness/`、`inputs/`、分数据集/任务/并发/轮次的`cells/`、`requests.jsonl`、原始文本/WAV/事件、`performance.json`、`quality.json`及`summary.md/json`。Full另显示Codec deferred及不完整状态。性能原始文件不因质量评分而改变。外层脚本、配置、环境/Slurm日志和验证记录放本run的`execution/`；必要的详细分析放`analysis/`，不在源码仓库另存报告副本。
 
 `--resume`仅跳过完整且hash有效的测量段；中断段新建attempt全量重跑，不拼接吞吐墙钟。原错误/部分输出保留。baseline通过`--baseline PATH`比较，核对完整输入/任务/部署/采样/指标及评分约定；实验变量需显式`--allow-difference FIELD`。不同suite版本不自动比较。
 
@@ -118,6 +128,6 @@ python -m build
 
 复用runner、性能与播放算法的来源/许可见[ORIGIN.md](ORIGIN.md)。客户端测试验证调度、门槛、协议、计时、校验和恢复，不冒称模型质量或数值正确性。
 
-[旧四集Quick实测](reports/eager-base-quick-20261031.md)与[HF质量诊断](reports/eager-base-quality-diagnosis-20261031.md)保持原始身份；其Seed聊天朗读与StoryCloze不属于当前套件，旧30分钟目标也不适用于新配置。
+历史运行`eager-base-quick-20261031`与`quality-diagnosis-20261031`保持原始身份；其Seed聊天朗读与StoryCloze不属于当前套件，旧30分钟目标也不适用于新配置。
 
-当前三集双路径实测见[新Quick报告](reports/eager-base-qa-quick-20261031.md)：单A800/C4，C00–C08全部pass；120请求全部尝试、114成功、6个S2T空文本失败，另3个length输出保留。包括正确性、服务加载/切换、评分和收尾共1087.555秒（约18分08秒），在40分钟目标内；成功输出评分完整，但模型整轮验收仍未通过。
+全部本地结果从`$MOSS_BENCHMARK_RESULTS_ROOT/README.md`查看，各run只打开其`summary.md`；运行目录不纳入客户端Git。历史脚本/绝对路径保留执行时身份，迁移后的当前位置以结果索引及迁移清单为准。

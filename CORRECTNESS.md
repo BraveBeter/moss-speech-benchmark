@@ -52,22 +52,25 @@ reference, first independently export and admit its provenance, environment,
 source closure, numerical settings and hashes. Candidate outputs are never golden.
 
 ```bash
+# Result location is independent of the checkout/worktree working directory.
+MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
+
 # CPU selection and processor; intentionally incomplete as a full-suite result
 moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
-  --checks C00,C01,C02 --output-dir results/correctness-single
+  --checks C00,C01,C02 --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness"
 
 # After arranging Slurm resources, run model providers in their own environment.
 # Configure providers.C03..C06.launcher as an argv prefix such as:
 # ["srun", "--partition=a800", "--gres=gpu:1", "--time=00:20:00", "/usr/bin/env"]
 moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
-  --checks C03,C04,C05,C06 --output-dir results/correctness-single --resume
+  --checks C03,C04,C05,C06 --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness" --resume
 
 # Release provider processes; start the target service outside this client.
 moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
-  --checks C07,C08 --output-dir results/correctness-single --resume
+  --checks C07,C08 --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness" --resume
 
 # Validate saved artifact hashes and regenerate the report without sending requests
-moss-speech-bench --phase correctness-report --output-dir results/correctness-single
+moss-speech-bench --phase correctness-report --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness"
 ```
 
 Providers require a Python 3.12 candidate runtime with the target dependencies.
@@ -118,3 +121,5 @@ This integration has local protocol/contract tests, fresh CPU 514 and processor
 76 comparisons, and three CPU/Torch tensor-policy tests. Real GPU C03–C06 and
 single/dual-service C07–C08 have not been rerun by this integration. Historical
 successes are preserved as historical evidence, not new acceptance results.
+
+正确性阶段也必须归入工作区`benchmark-results/<run_id>/correctness/`，与同次性能/质量结果共用run根。只运行正确性时，在run根保留简短summary.md入口，详细断言仍在correctness/correctness.md；不向.audit或源码仓库另存报告。
