@@ -70,3 +70,12 @@ buffered decoders, different precision/kernels and different attention libraries
 can have different waveforms; behavioral ASR agreement is not tensor parity.
 Use the independent `correctness` phase for numerical/greedy gates. Do not call
 similar quality scores proof of correct adaptation or tuned prompts model fixes.
+
+The pinned checkpoint advertises Transformers 4.57.0.dev0; stable 4.57.1 removed
+an argument required by its original generation method. An isolated 4.56.2
+reference runtime restores that generation interface without editing checkpoint
+source. Where TorchAudio requires unavailable TorchCodec, `--pcm16-reader` uses
+an explicit, PCM16-only WAV reader with exact int16/32768 normalization. This
+replaces only private-process file I/O, is recorded in lineage, and must not be
+represented as an unmodified dependency environment. Model/processor/generation/
+codec computation and checkpoint source remain unchanged.

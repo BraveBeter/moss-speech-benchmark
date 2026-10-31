@@ -103,3 +103,21 @@ def test_speech_prompt_changes_system_only(tmp_path):
     assert rows[0]["payload"]["messages"][0]["role"] == "system"
     assert rows[0]["payload"]["messages"][1]["content"][0]["type"] == "input_audio"
     assert rows[0]["expected"] == "Moscow"
+
+
+def test_reference_pcm_reader_preserves_signed_samples(tmp_path):
+    import wave
+
+    import numpy as np
+    from moss_speech_bench.providers.hf_http import read_pcm16
+
+    values = np.array([-32768, -1, 0, 1, 32767], dtype="<i2")
+    path = tmp_path / "reference.wav"
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(24000)
+        wav.writeframes(values.tobytes())
+    samples, rate = read_pcm16(path)
+    assert rate == 24000 and samples.shape == (1, 5)
+    np.testing.assert_array_equal(samples[0], values.astype(np.float32) / np.float32(32768))

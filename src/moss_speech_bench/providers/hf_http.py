@@ -11,9 +11,25 @@ import io
 import json
 import os
 import sys
+import wave
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import ModuleType
+
+
+def read_pcm16(path):
+    """PCM WAV I/O only; normalized samples match int16 / 32768 exactly."""
+    import numpy as np
+
+    with wave.open(str(path)) as wav:
+        if wav.getcomptype() != "NONE" or wav.getsampwidth() != 2:
+            raise ValueError("Reference PCM reader requires uncompressed PCM16 WAV")
+        samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
+        if samples.size != wav.getnframes() * wav.getnchannels():
+            raise ValueError("Truncated reference WAV")
+        return (
+            samples.reshape(-1, wav.getnchannels()).T.astype(np.float32) / np.float32(32768)
+        ), wav.getframerate()
 
 
 def main():
@@ -21,6 +37,11 @@ def main():
     for name in ("model", "codec", "voice", "output"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--port", required=True, type=int)
+    parser.add_argument(
+        "--pcm16-reader",
+        action="store_true",
+        help="Explicit PCM16 I/O adapter for environments without TorchCodec",
+    )
     args = parser.parse_args()
     assert os.environ.get("SLURM_JOB_ID"), "Reference generation requires Slurm"
     import numpy as np
@@ -28,6 +49,16 @@ def main():
     import torch
     from transformers import AutoModel, AutoProcessor, GenerationConfig
 
+    if args.pcm16_reader:
+        import torchaudio
+
+        def load_pcm(path, *positional, **kwargs):
+            if positional or kwargs:
+                raise ValueError("PCM reader accepts only a file path")
+            samples, rate = read_pcm16(path)
+            return torch.from_numpy(samples.copy()), rate
+
+        torchaudio.load = load_pcm  # Isolated process: I/O only, no model method replacement.
     torch.set_num_threads(1)
     torch.backends.cudnn.benchmark = False
     directory = Path(args.output)
@@ -73,6 +104,9 @@ def main():
                     "attention": "sdpa",
                     "codec_dtype": "float32",
                     "sglang_imported": False,
+                    "audio_io": "explicit PCM16 reader"
+                    if args.pcm16_reader
+                    else "native torchaudio",
                     "sources": files,
                 },
                 indent=2,
