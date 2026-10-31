@@ -83,3 +83,8 @@ codec computation and checkpoint source remain unchanged.
 The diagnostic greedy configuration explicitly sets `min_new_tokens=0`, as the
 original generation loop compares this field as an integer. This adds no forced
 minimum output and matches the eager request’s unrestricted minimum.
+
+The HF adapter uses `model.config.pad_token_id` (the checkpoint initializes it
+from its modality pad), while EOS uses tokenizer end tokens. Substituting the
+tokenizer padding ID for the modality pad would stop audio after its first code.
+Failed adapter attempts are retained as tool failures, not model-quality evidence.

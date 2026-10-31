@@ -162,7 +162,7 @@ def main():
                     max_new_tokens=limit,
                     min_new_tokens=0,
                     repetition_penalty=payload.get("repetition_penalty", 1.0),
-                    pad_token_id=processor.tokenizer.pad_token_id,
+                    pad_token_id=model.config.pad_token_id,
                     eos_token_id=[
                         processor.tokenizer.pad_token_id,
                         processor.tokenizer.convert_tokens_to_ids("<|im_end|>"),
