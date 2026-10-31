@@ -157,6 +157,8 @@ def evaluate(sample, row, audio, backend, config):
     metrics = ["wer" if lang == "en" else "cer", "sim"] if task == "t2s" else ["accuracy"]
     if task == "s2s":
         metrics = ["accuracy", "utmos"]
+        if config.get("qa_answer_mention", False):
+            metrics.append("answer_mention")
     if not row or not row["is_success"]:
         return {m: {"status": "generation_failed" if row else "not_attempted"} for m in metrics}
     transcript = None
@@ -207,6 +209,20 @@ def evaluate(sample, row, audio, backend, config):
                 return backend.sim(spec["reference"], audio)
 
             result[metric] = _measure(similarity)
+        elif metric == "answer_mention":
+
+            def mention():
+                if not transcript or transcript["status"] != "scored":
+                    raise Unavailable("QA transcript unavailable")
+                answer = " " + normalize_answer(transcript["value"]) + " "
+                return float(
+                    any(
+                        " " + normalize_answer(a) + " " in answer
+                        for a in aliases(sample["expected"])
+                    )
+                )
+
+            result[metric] = _measure(mention)
         elif metric == "utmos":
             result[metric] = _measure(lambda: backend.utmos(audio))
         else:

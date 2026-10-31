@@ -200,3 +200,5 @@ Quick的目标是推理25分钟＋评分5分钟。`--time-budget SECONDS`可分�
 评分可采用SGLang-Omni CI同源的Qwen3-ASR HTTP流程：asr_en/asr_zh配置backend=qwen3-asr、base_url、model及concurrency（默认32）。客户端并发上传已保存WAV，使用model/language/response_format字段和服务端greedy默认值，缓存完整转录后再离线评分；不重新向MOSS发请求。英文归一化仍复用CI的EnglishTextNormalizer，此处使用其文本规则，不加载Whisper模型。UTMOS的WAV读取使用上游同样支持的soundfile float32方式，避免缺失TorchCodec导致评分失败，重采样和预测算法保持。
 
 2026-10-31单卡A800实测：正式推理1167.58秒＋最终评分61.37秒＝20分29秒，120条全部完成；计入本次启动、排错与重试实际30分55秒，未达到整个流程30分钟目标。两个成功作业的工作时间合计23分14秒仅为分段统计，尚未连续无故障复跑；详见[完整报告](reports/eager-base-quick-20261031.md)。
+
+TTS朗读与S2S问答协议、显式prompt配置和隔离HF对照入口见 [PROTOCOLS.md](PROTOCOLS.md)。默认提示词及严格EM保持原口径，答案提及诊断必须显式启用，不能作为语义准确率。

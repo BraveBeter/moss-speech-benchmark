@@ -1,3 +1,5 @@
 include LICENSE ORIGIN.md origin.json CORRECTNESS.md
 recursive-include examples *.json
 recursive-include tests *.py
+
+include PROTOCOLS.md

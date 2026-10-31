@@ -1,12 +1,11 @@
 import hashlib
 
 import pytest
-from test_runner import args, workload
-
 from moss_speech_bench.cli import run
 from moss_speech_bench.quality import aggregate, evaluate, quality_report, score
 from moss_speech_bench.reporting import report
 from moss_speech_bench.storage import read_json, write_json
+from test_runner import args, workload
 
 
 async def test_offline_qa_and_report_resume(server, tmp_path):
@@ -196,7 +195,6 @@ async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path):
     import asyncio
 
     from aiohttp import web
-
     from moss_speech_bench.asr import transcribe_many
 
     state = dict(active=0, peak=0, calls=0)
@@ -240,3 +238,30 @@ async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path):
         assert state["calls"] == 8
     finally:
         await runner.cleanup()
+
+
+def test_answer_mention_is_explicit_diagnostic_not_semantic_accuracy():
+    class Backend:
+        text = "Moscow is the capital of Russia."
+
+        def transcribe(self, path, lang):
+            return self.text
+
+        def utmos(self, path):
+            return 4.0
+
+    backend = Backend()
+    sample = dict(task="s2s", language="en", expected="Moscow")
+    result = evaluate(
+        sample, dict(is_success=True), "saved.wav", backend, {"qa_answer_mention": True}
+    )
+    assert not result["accuracy"]["value"]["correct"]
+    assert result["answer_mention"]["value"] == 1.0
+    assert "answer_mention" not in evaluate(sample, dict(is_success=True), "saved.wav", backend, {})
+    backend.text = "Moscowish"
+    assert (
+        evaluate(sample, dict(is_success=True), "saved.wav", backend, {"qa_answer_mention": True})[
+            "answer_mention"
+        ]["value"]
+        == 0.0
+    )

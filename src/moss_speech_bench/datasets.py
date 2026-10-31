@@ -75,6 +75,19 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
     task = spec["task"]
     if task not in TASKS or spec["language"] not in ("en", "zh"):
         raise ValueError("Invalid task or language")
+    prompt = spec.get("prompt", {})
+    if not isinstance(prompt, dict) or set(prompt) - {"template", "system", "name"}:
+        raise ValueError("Invalid prompt configuration")
+    if "template" in prompt and (
+        not isinstance(prompt["template"], str)
+        or prompt["template"].count("{text}") != 1
+        or re.findall(r"\{[^{}]*\}", prompt["template"]) != ["{text}"]
+    ):
+        raise ValueError("Prompt template must contain exactly one {text} field")
+    if any(not isinstance(v, str) or not v.strip() for v in prompt.values()):
+        raise ValueError("Prompt values must be nonempty strings")
+    if task.startswith("s") and "template" in prompt:
+        raise ValueError("Speech input accepts a system prompt, not a text template")
     records = _records(spec, root)
     expected = spec["expected"]
     if (
@@ -126,7 +139,9 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
             content = row["text"]
             if not isinstance(content, str) or not content.strip():
                 raise ValueError(f"Empty text: {sample_id}")
-            if task == "t2s":
+            if "template" in prompt:
+                content = prompt["template"].replace("{text}", content)
+            elif task == "t2s":
                 instruction = (
                     "Read the following text verbatim. Do not add any other words:\n"
                     if spec["language"] == "en"
@@ -140,6 +155,8 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
             modalities=["audio" if task.endswith("s") else "text"],
             stream=stream,
         )
+        if "system" in prompt:
+            payload["messages"].insert(0, {"role": "system", "content": prompt["system"]})
         if task.endswith("s") and stream:
             payload["audio"] = {"format": "pcm"}
         prepared.append(
@@ -155,6 +172,8 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
         k: spec.get(k) for k in ("id", "kind", "task", "language", "revision", "split", "expected")
     }
     metadata.update(samples_hash=digest(prepared), prompt_version=PROMPT_VERSION)
+    if prompt:
+        metadata.update(prompt=prompt, prompt_hash=digest(prompt))
     if selection:
         metadata.update(expected=len(prepared), selection=selection)
     source = root / spec["source"]

@@ -2,7 +2,6 @@ import base64
 import csv
 
 import pytest
-
 from moss_speech_bench.datasets import prepare_dataset
 from moss_speech_bench.storage import write_json
 
@@ -62,3 +61,45 @@ def test_duplicate_ids_and_formal_warmup_overlap_rejected(tmp_path):
     write_json(tmp_path / "config.json", {"datasets": [spec], "warmup": spec})
     with pytest.raises(ValueError, match="disjoint"):
         load_workload(tmp_path / "config.json", "moss", True, "custom")
+
+
+def test_explicit_prompt_preserves_reference_and_identity(tmp_path):
+    write_json(tmp_path / "samples.json", [{"id": "x", "text": "目标原文", "expected": "目标原文"}])
+    spec = dict(
+        id="test", kind="json", source="samples.json", task="t2s", language="zh", expected=1
+    )
+    default, before = prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
+    spec["prompt"] = {
+        "name": "tts-system-zh-v1",
+        "system": "只用中文朗读，不翻译。",
+        "template": "{text}",
+    }
+    rows, metadata = prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
+    assert rows[0]["expected"] == "目标原文"
+    assert rows[0]["payload"]["messages"] == [
+        {"role": "system", "content": "只用中文朗读，不翻译。"},
+        {"role": "user", "content": "目标原文"},
+    ]
+    assert before["samples_hash"] != metadata["samples_hash"] and metadata["prompt_hash"]
+    assert default[0]["payload"]["messages"][0]["content"].startswith("请逐字朗读")
+    spec["prompt"]["template"] = "{text} {other}"
+    with pytest.raises(ValueError, match="exactly one"):
+        prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
+
+
+def test_speech_prompt_changes_system_only(tmp_path):
+    (tmp_path / "audio.wav").write_bytes(b"audio")
+    write_json(tmp_path / "samples.json", [{"id": "x", "audio": "audio.wav", "expected": "Moscow"}])
+    spec = dict(
+        id="test",
+        kind="json",
+        source="samples.json",
+        task="s2s",
+        language="en",
+        expected=1,
+        prompt={"name": "qa-short-v1", "system": "Answer with a short phrase."},
+    )
+    rows, _ = prepare_dataset(spec, tmp_path, model="moss", stream=False, sampling={})
+    assert rows[0]["payload"]["messages"][0]["role"] == "system"
+    assert rows[0]["payload"]["messages"][1]["content"][0]["type"] == "input_audio"
+    assert rows[0]["expected"] == "Moscow"
