@@ -249,3 +249,30 @@ async def test_full_and_daily_cannot_bypass_correctness(server, tmp_path, correc
         args(config, url, tmp_path / mode, "--mode", mode, "--correctness-config", "fixture.json")
     )
     assert result["correctness"]["failed"] and not state["payloads"]
+
+
+async def test_quick_preserves_outer_execution_records_and_rejects_prior_results(
+    server, tmp_path, correctness_stub
+):
+    url, state = server
+    config = daily_workload(tmp_path)
+    correctness_stub.update(url=url, status="pass")
+    output = tmp_path / "prepared"
+    execution = output / "execution"
+    execution.mkdir(parents=True)
+    record = execution / "identity.json"
+    record.write_bytes(b'{"commit":"operator-declared"}\n')
+    saved = record.read_bytes()
+    arguments = args(config, url, output, "--mode", "quick", "--correctness-config", "fixture.json")
+    await run(arguments)
+    assert len(state["payloads"]) == 120 and record.read_bytes() == saved
+    with pytest.raises(ValueError, match="Output directory is not empty"):
+        await run(arguments)
+    assert len(state["payloads"]) == 120
+    bad = tmp_path / "execution-file"
+    bad.mkdir()
+    (bad / "execution").write_text("not a directory")
+    arguments.output_dir = bad
+    with pytest.raises(ValueError, match="Output directory is not empty"):
+        await run(arguments)
+    assert len(state["payloads"]) == 120

@@ -88,6 +88,14 @@ def parser():
     return p
 
 
+def check_fresh_output(root, mode):
+    allowed = {"execution"}
+    if mode != "custom":
+        allowed.add("correctness")
+    if root.exists() and any(p.name not in allowed or not p.is_dir() for p in root.iterdir()):
+        raise ValueError("Output directory is not empty; use --resume or a fresh directory")
+
+
 async def run(args):
     if args.mode == "quickly":
         args.mode = "quick"
@@ -221,12 +229,8 @@ async def run(args):
         check_config = load_suite(args.correctness_config)
         if check_config.get("base_url", "").rstrip("/") != args.base_url.rstrip("/"):
             raise ValueError("Correctness endpoint differs from the benchmark endpoint")
-        if (
-            not args.resume
-            and args.output_dir.exists()
-            and any(p.name != "correctness" for p in args.output_dir.iterdir())
-        ):
-            raise ValueError("Output directory is not empty; use a fresh directory")
+        if not args.resume:
+            check_fresh_output(args.output_dir, args.mode)
         gate_start = time.monotonic()
         gate_dir = args.output_dir / "correctness"
         suite = await run_correctness(
@@ -279,10 +283,7 @@ async def run(args):
         if manifest["base_url"] != args.base_url:
             raise ValueError("Resume endpoint mismatch")
     else:
-        if root.exists() and any(
-            p.name != "correctness" or args.mode == "custom" for p in root.iterdir()
-        ):
-            raise ValueError("Output directory is not empty; use --resume or a fresh directory")
+        check_fresh_output(root, args.mode)
         root.mkdir(parents=True, exist_ok=True)
         (root / "inputs").mkdir()
         for name, (rows, _) in datasets.items():
