@@ -99,3 +99,32 @@ def create_text_decode_executor(model_path):
             return result
 
     return TracedText(load_tokenizer(model_path))
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--port", required=True, type=int)
+    args = parser.parse_args()
+    assert os.environ.get("SLURM_JOB_ID"), "Diagnostic serving requires Slurm"
+    from sglang_omni.config.manager import ConfigManager
+    from sglang_omni.serve.launcher import launch_server
+
+    config = ConfigManager.from_file(args.config).config
+    before = config.model_dump()
+    factories = {
+        "ar_engine": "moss_speech_bench.providers.sg_trace.create_ar_engine_executor",
+        "text_decode": "moss_speech_bench.providers.sg_trace.create_text_decode_executor",
+    }
+    for stage in config.stages:
+        if stage.name in factories:
+            stage.factory_path = factories[stage.name]
+    after = config.model_dump()
+    write_trace("deployment", "topology", dict(before=before, after=after))
+    launch_server(config, host="127.0.0.1", port=args.port)
+
+
+if __name__ == "__main__":
+    main()
