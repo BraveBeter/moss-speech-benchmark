@@ -27,6 +27,9 @@ Never strip a reply, translate its transcript back, or replace the reference to
 improve WER/CER. Before accepting a protocol, examine a fixed bilingual challenge
 set containing questions, instructions, numbers and normal declarative sentences.
 Report language/task violations and empty/truncated output alongside error rates.
+For ASR diagnosis, `asr_en/asr_zh.language_hint: "auto"` omits the language hint;
+this is an explicitly different scorer identity. The normal default still sends
+the declared sample language. Preserve both transcripts and their settings.
 
 Use corpus edits/reference length as the primary WER/CER, per-sample values as
 diagnostics. Insertions can make a sample exceed 100%. Compare the recognizer's

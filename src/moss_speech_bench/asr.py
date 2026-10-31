@@ -52,7 +52,9 @@ async def transcribe_many(items, cache, deadline=None):
                     if deadline is None or started < deadline:
                         form = aiohttp.FormData()
                         form.add_field("model", spec["model"])
-                        form.add_field("language", language)
+                        hint = spec.get("language_hint", language)
+                        if hint != "auto":
+                            form.add_field("language", hint)
                         form.add_field("response_format", "json")
                         form.add_field(
                             "file",

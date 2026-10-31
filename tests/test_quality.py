@@ -191,7 +191,8 @@ async def test_installed_offline_score_entrypoint(server, tmp_path):
     assert len(state["payloads"]) == 1
 
 
-async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path):
+@pytest.mark.parametrize("auto", [False, True])
+async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path, auto):
     import asyncio
 
     from aiohttp import web
@@ -201,7 +202,8 @@ async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path):
 
     async def handler(request):
         fields = await request.post()
-        assert fields["model"] == "qwen" and fields["language"] in ("en", "zh")
+        assert fields["model"] == "qwen"
+        assert ("language" not in fields) if auto else fields["language"] in ("en", "zh")
         assert fields["response_format"] == "json" and fields["file"].file.read()
         assert "temperature" not in fields
         state["calls"] += 1
@@ -226,6 +228,8 @@ async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path):
             model="qwen",
             concurrency=4,
         )
+        if auto:
+            spec["language_hint"] = "auto"
         items = []
         for i in range(8):
             path = tmp_path / (str(i) + ".wav")
