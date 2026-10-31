@@ -2,6 +2,7 @@ import base64
 import csv
 
 import pytest
+
 from moss_speech_bench.datasets import prepare_dataset
 from moss_speech_bench.storage import write_json
 
@@ -109,6 +110,7 @@ def test_reference_pcm_reader_preserves_signed_samples(tmp_path):
     import wave
 
     import numpy as np
+
     from moss_speech_bench.providers.hf_http import read_pcm16
 
     values = np.array([-32768, -1, 0, 1, 32767], dtype="<i2")
