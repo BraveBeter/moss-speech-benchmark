@@ -119,3 +119,5 @@ python -m build
 复用runner、性能与播放算法的来源/许可见[ORIGIN.md](ORIGIN.md)。客户端测试验证调度、门槛、协议、计时、校验和恢复，不冒称模型质量或数值正确性。
 
 [旧四集Quick实测](reports/eager-base-quick-20261031.md)与[HF质量诊断](reports/eager-base-quality-diagnosis-20261031.md)保持原始身份；其Seed聊天朗读与StoryCloze不属于当前套件，旧30分钟目标也不适用于新配置。
+
+当前三集双路径实测见[新Quick报告](reports/eager-base-qa-quick-20261031.md)：单A800/C4，C00–C08全部pass；120请求全部尝试、114成功、6个S2T空文本失败，另3个length输出保留。包括正确性、服务加载/切换、评分和收尾共1087.555秒（约18分08秒），在40分钟目标内；成功输出评分完整，但模型整轮验收仍未通过。

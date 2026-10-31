@@ -1,0 +1,716 @@
+{
+  "candidate_commit": "fd99062a9d659d3ec986d33c1a56b8db6368f007",
+  "correctness_status": "pass",
+  "correctness_gate_counts": {
+    "C00": 1,
+    "C01": 514,
+    "C02": 76,
+    "C03": 3,
+    "C04": 32,
+    "C05": 5,
+    "C06": 4,
+    "C07": 20,
+    "C08": 2
+  },
+  "requests": 120,
+  "succeeded": 114,
+  "scored": 114,
+  "generation_failures": [
+    {
+      "dataset": "llama_questions-s2t",
+      "id": "llama_questions_188.wav",
+      "error": "Empty text output",
+      "http_status": 200,
+      "finish_reason": "stop"
+    },
+    {
+      "dataset": "trivia_qa-s2t",
+      "id": "trivia_qa_832.wav",
+      "error": "Empty text output",
+      "http_status": 200,
+      "finish_reason": "stop"
+    },
+    {
+      "dataset": "trivia_qa-s2t",
+      "id": "trivia_qa_842.wav",
+      "error": "Empty text output",
+      "http_status": 200,
+      "finish_reason": "stop"
+    },
+    {
+      "dataset": "trivia_qa-s2t",
+      "id": "trivia_qa_486.wav",
+      "error": "Empty text output",
+      "http_status": 200,
+      "finish_reason": "stop"
+    },
+    {
+      "dataset": "web_questions-s2t",
+      "id": "web_questions_129.wav",
+      "error": "Empty text output",
+      "http_status": 200,
+      "finish_reason": "stop"
+    },
+    {
+      "dataset": "web_questions-s2t",
+      "id": "web_questions_1976.wav",
+      "error": "Empty text output",
+      "http_status": 200,
+      "finish_reason": "stop"
+    }
+  ],
+  "model_acceptance": "incomplete",
+  "asr_requests": 60,
+  "asr_peak": 32,
+  "within_40min": true,
+  "total_elapsed_s": 1087.554991,
+  "phases": {
+    "correctness-components": {
+      "exit_code": 1,
+      "elapsed_s": 190.89082789514214
+    },
+    "moss_startup_s": 60.17808732902631,
+    "infer": {
+      "exit_code": 1,
+      "elapsed_s": 736.4790563466959
+    },
+    "asr_startup_s": 74.91741426801309,
+    "score": {
+      "exit_code": 1,
+      "elapsed_s": 22.030890204943717
+    }
+  },
+  "formal_wall_s": 538.8616092647426,
+  "performance_unchanged": true,
+  "per_cell": {
+    "llama_questions-s2t": {
+      "expected": 20,
+      "attempted": 20,
+      "succeeded": 19,
+      "failed": 1,
+      "length_count": 0,
+      "wall_clock_s": 5.731892707757652,
+      "performance": {
+        "latency_mean_s": 1.019,
+        "latency_p95_s": 1.673,
+        "rtf_mean": null,
+        "rtf_p95": null,
+        "throughput_qps": 3.3147864010582477,
+        "text_ttft_mean_s": 0.2728,
+        "text_ttft_p95_s": 0.3976,
+        "audio_ttfp_mean_s": null,
+        "audio_ttfp_p95_s": null,
+        "audio_throughput_s_per_s": null
+      },
+      "quality": {
+        "accuracy": {
+          "expected": 20,
+          "scored": 19,
+          "statuses": {
+            "scored": 19,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 1,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 0.3,
+          "evaluated_accuracy": 0.3157894736842105,
+          "invalid": 0
+        }
+      }
+    },
+    "llama_questions-s2s": {
+      "expected": 20,
+      "attempted": 20,
+      "succeeded": 20,
+      "failed": 0,
+      "length_count": 0,
+      "wall_clock_s": 90.6942984717898,
+      "performance": {
+        "latency_mean_s": 16.961,
+        "latency_p95_s": 52.036,
+        "rtf_mean": 4.5457,
+        "rtf_p95": 6.5032,
+        "throughput_qps": 0.22052102874163518,
+        "audio_throughput_s_per_s": 0.889,
+        "audio_ttfp_mean_s": 9.1531,
+        "audio_ttfp_p95_s": 12.6328,
+        "text_ttft_mean_s": null,
+        "text_ttft_p95_s": null
+      },
+      "quality": {
+        "accuracy": {
+          "expected": 20,
+          "scored": 20,
+          "statuses": {
+            "scored": 20,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 0,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 0.3,
+          "evaluated_accuracy": 0.3,
+          "invalid": 0
+        },
+        "utmos": {
+          "expected": 20,
+          "scored": 20,
+          "statuses": {
+            "scored": 20,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 0,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 3.9355031967163088
+        }
+      }
+    },
+    "trivia_qa-s2t": {
+      "expected": 20,
+      "attempted": 20,
+      "succeeded": 17,
+      "failed": 3,
+      "length_count": 0,
+      "wall_clock_s": 14.835979415103793,
+      "performance": {
+        "latency_mean_s": 1.359,
+        "latency_p95_s": 2.3,
+        "rtf_mean": null,
+        "rtf_p95": null,
+        "throughput_qps": 1.145863008052783,
+        "text_ttft_mean_s": 0.2987,
+        "text_ttft_p95_s": 0.6117,
+        "audio_ttfp_mean_s": null,
+        "audio_ttfp_p95_s": null,
+        "audio_throughput_s_per_s": null
+      },
+      "quality": {
+        "accuracy": {
+          "expected": 20,
+          "scored": 17,
+          "statuses": {
+            "scored": 17,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 3,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 0.05,
+          "evaluated_accuracy": 0.058823529411764705,
+          "invalid": 0
+        }
+      }
+    },
+    "trivia_qa-s2s": {
+      "expected": 20,
+      "attempted": 20,
+      "succeeded": 20,
+      "failed": 0,
+      "length_count": 0,
+      "wall_clock_s": 178.83029482793063,
+      "performance": {
+        "latency_mean_s": 27.364,
+        "latency_p95_s": 74.956,
+        "rtf_mean": 4.5535,
+        "rtf_p95": 5.7545,
+        "throughput_qps": 0.11183787410988655,
+        "audio_throughput_s_per_s": 0.803,
+        "audio_ttfp_mean_s": 9.505,
+        "audio_ttfp_p95_s": 12.6365,
+        "text_ttft_mean_s": null,
+        "text_ttft_p95_s": null
+      },
+      "quality": {
+        "accuracy": {
+          "expected": 20,
+          "scored": 20,
+          "statuses": {
+            "scored": 20,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 0,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 0.05,
+          "evaluated_accuracy": 0.05,
+          "invalid": 0
+        },
+        "utmos": {
+          "expected": 20,
+          "scored": 20,
+          "statuses": {
+            "scored": 20,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 0,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 3.9518588542938233
+        }
+      }
+    },
+    "web_questions-s2t": {
+      "expected": 20,
+      "attempted": 20,
+      "succeeded": 18,
+      "failed": 2,
+      "length_count": 2,
+      "wall_clock_s": 58.734014221001416,
+      "performance": {
+        "latency_mean_s": 7.503,
+        "latency_p95_s": 54.955,
+        "rtf_mean": null,
+        "rtf_p95": null,
+        "throughput_qps": 0.3064663677212747,
+        "text_ttft_mean_s": 0.204,
+        "text_ttft_p95_s": 0.2576,
+        "audio_ttfp_mean_s": null,
+        "audio_ttfp_p95_s": null,
+        "audio_throughput_s_per_s": null
+      },
+      "quality": {
+        "accuracy": {
+          "expected": 20,
+          "scored": 18,
+          "statuses": {
+            "scored": 18,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 2,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 0.05,
+          "evaluated_accuracy": 0.05555555555555555,
+          "invalid": 0
+        }
+      }
+    },
+    "web_questions-s2s": {
+      "expected": 20,
+      "attempted": 20,
+      "succeeded": 20,
+      "failed": 0,
+      "length_count": 1,
+      "wall_clock_s": 190.03512962115929,
+      "performance": {
+        "latency_mean_s": 31.759,
+        "latency_p95_s": 97.401,
+        "rtf_mean": 4.5594,
+        "rtf_p95": 5.9679,
+        "throughput_qps": 0.10524369909853298,
+        "audio_throughput_s_per_s": 0.788,
+        "audio_ttfp_mean_s": 11.7048,
+        "audio_ttfp_p95_s": 16.8193,
+        "text_ttft_mean_s": null,
+        "text_ttft_p95_s": null
+      },
+      "quality": {
+        "accuracy": {
+          "expected": 20,
+          "scored": 20,
+          "statuses": {
+            "scored": 20,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 0,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 0.0,
+          "evaluated_accuracy": 0.0,
+          "invalid": 0
+        },
+        "utmos": {
+          "expected": 20,
+          "scored": 20,
+          "statuses": {
+            "scored": 20,
+            "failed": 0,
+            "unavailable": 0,
+            "generation_failed": 0,
+            "not_attempted": 0,
+            "budget_exhausted": 0
+          },
+          "value": 4.010348641872406
+        }
+      }
+    }
+  },
+  "model_commit": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
+  "suite_version": "moss-spoken-qa-v2",
+  "client_source_hash": "bd841d9a66765c759292127bff2ad32fe4e605f20fdf6b009ea41d52459f49bb",
+  "dataset_contracts": {
+    "llama_questions-s2t": {
+      "id": "llama_questions-s2t",
+      "kind": "openaudio",
+      "task": "s2t",
+      "language": "en",
+      "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b",
+      "split": "llama_questions",
+      "expected": 20,
+      "samples_hash": "faff72a26f0ce9d61cb180aa7150aebcffef02c24c0b93b02462e0810b7dc748",
+      "prompt_version": "moss-chat-v1",
+      "prompt": {
+        "name": "spoken-qa-short-en-v1",
+        "system": "Answer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+      },
+      "prompt_hash": "5f42b840fb66f353ed979ac2222146c96fdb44ebb501050843db1e714e389df2",
+      "selection": {
+        "algorithm": "sha256-id-v1",
+        "seed": 42,
+        "size": 20,
+        "ids": [
+          "llama_questions_109.wav",
+          "llama_questions_236.wav",
+          "llama_questions_114.wav",
+          "llama_questions_295.wav",
+          "llama_questions_183.wav",
+          "llama_questions_119.wav",
+          "llama_questions_0.wav",
+          "llama_questions_264.wav",
+          "llama_questions_257.wav",
+          "llama_questions_128.wav",
+          "llama_questions_175.wav",
+          "llama_questions_71.wav",
+          "llama_questions_188.wav",
+          "llama_questions_200.wav",
+          "llama_questions_280.wav",
+          "llama_questions_47.wav",
+          "llama_questions_250.wav",
+          "llama_questions_34.wav",
+          "llama_questions_50.wav",
+          "llama_questions_135.wav"
+        ],
+        "population_expected": 300,
+        "population_ids_hash": "f3bd9fd44fef8cf4ba92758dc6f7931a337947e106c861c5bac009b47e43bd40"
+      },
+      "source_file_sha256": "d5edcfa7581060058e37fb42a3e49ef469550de2b69397f2df750e95c10fb4a4",
+      "source_dataset": "llama_questions",
+      "suite_version": "moss-spoken-qa-v2"
+    },
+    "llama_questions-s2s": {
+      "id": "llama_questions-s2s",
+      "kind": "openaudio",
+      "task": "s2s",
+      "language": "en",
+      "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b",
+      "split": "llama_questions",
+      "expected": 20,
+      "samples_hash": "80cc829b056e2e7955f393a9d2b85d0ef0db67faf8206d967e6fb7b5bcbe4eaa",
+      "prompt_version": "moss-chat-v1",
+      "prompt": {
+        "name": "spoken-qa-short-en-v1",
+        "system": "Answer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+      },
+      "prompt_hash": "5f42b840fb66f353ed979ac2222146c96fdb44ebb501050843db1e714e389df2",
+      "selection": {
+        "algorithm": "sha256-id-v1",
+        "seed": 42,
+        "size": 20,
+        "ids": [
+          "llama_questions_109.wav",
+          "llama_questions_236.wav",
+          "llama_questions_114.wav",
+          "llama_questions_295.wav",
+          "llama_questions_183.wav",
+          "llama_questions_119.wav",
+          "llama_questions_0.wav",
+          "llama_questions_264.wav",
+          "llama_questions_257.wav",
+          "llama_questions_128.wav",
+          "llama_questions_175.wav",
+          "llama_questions_71.wav",
+          "llama_questions_188.wav",
+          "llama_questions_200.wav",
+          "llama_questions_280.wav",
+          "llama_questions_47.wav",
+          "llama_questions_250.wav",
+          "llama_questions_34.wav",
+          "llama_questions_50.wav",
+          "llama_questions_135.wav"
+        ],
+        "population_expected": 300,
+        "population_ids_hash": "f3bd9fd44fef8cf4ba92758dc6f7931a337947e106c861c5bac009b47e43bd40"
+      },
+      "source_file_sha256": "d5edcfa7581060058e37fb42a3e49ef469550de2b69397f2df750e95c10fb4a4",
+      "source_dataset": "llama_questions",
+      "suite_version": "moss-spoken-qa-v2"
+    },
+    "trivia_qa-s2t": {
+      "id": "trivia_qa-s2t",
+      "kind": "openaudio",
+      "task": "s2t",
+      "language": "en",
+      "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b",
+      "split": "trivia_qa",
+      "expected": 20,
+      "samples_hash": "ab4e021f1797e69f24a49459fe7ea471ae173505c71e0591cbec69d2dd08e550",
+      "prompt_version": "moss-chat-v1",
+      "prompt": {
+        "name": "spoken-qa-short-en-v1",
+        "system": "Answer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+      },
+      "prompt_hash": "5f42b840fb66f353ed979ac2222146c96fdb44ebb501050843db1e714e389df2",
+      "selection": {
+        "algorithm": "sha256-id-v1",
+        "seed": 42,
+        "size": 20,
+        "ids": [
+          "trivia_qa_832.wav",
+          "trivia_qa_696.wav",
+          "trivia_qa_695.wav",
+          "trivia_qa_346.wav",
+          "trivia_qa_834.wav",
+          "trivia_qa_668.wav",
+          "trivia_qa_553.wav",
+          "trivia_qa_631.wav",
+          "trivia_qa_381.wav",
+          "trivia_qa_8.wav",
+          "trivia_qa_702.wav",
+          "trivia_qa_208.wav",
+          "trivia_qa_293.wav",
+          "trivia_qa_842.wav",
+          "trivia_qa_486.wav",
+          "trivia_qa_859.wav",
+          "trivia_qa_283.wav",
+          "trivia_qa_840.wav",
+          "trivia_qa_279.wav",
+          "trivia_qa_439.wav"
+        ],
+        "population_expected": 1000,
+        "population_ids_hash": "9d22a54814caacbab4b5bf88573d6d4dac9d4a7e324cf8c50f3a88f6db1bfa8e"
+      },
+      "source_file_sha256": "7225483a5fe40a477f8d3e93ae74e8b869c24f8f27afd1a6089e6806073d3248",
+      "source_dataset": "trivia_qa",
+      "suite_version": "moss-spoken-qa-v2"
+    },
+    "trivia_qa-s2s": {
+      "id": "trivia_qa-s2s",
+      "kind": "openaudio",
+      "task": "s2s",
+      "language": "en",
+      "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b",
+      "split": "trivia_qa",
+      "expected": 20,
+      "samples_hash": "65da87fe2846eb6e7dd593ee453f33be804dc48b10a044df10986f5744dd2990",
+      "prompt_version": "moss-chat-v1",
+      "prompt": {
+        "name": "spoken-qa-short-en-v1",
+        "system": "Answer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+      },
+      "prompt_hash": "5f42b840fb66f353ed979ac2222146c96fdb44ebb501050843db1e714e389df2",
+      "selection": {
+        "algorithm": "sha256-id-v1",
+        "seed": 42,
+        "size": 20,
+        "ids": [
+          "trivia_qa_832.wav",
+          "trivia_qa_696.wav",
+          "trivia_qa_695.wav",
+          "trivia_qa_346.wav",
+          "trivia_qa_834.wav",
+          "trivia_qa_668.wav",
+          "trivia_qa_553.wav",
+          "trivia_qa_631.wav",
+          "trivia_qa_381.wav",
+          "trivia_qa_8.wav",
+          "trivia_qa_702.wav",
+          "trivia_qa_208.wav",
+          "trivia_qa_293.wav",
+          "trivia_qa_842.wav",
+          "trivia_qa_486.wav",
+          "trivia_qa_859.wav",
+          "trivia_qa_283.wav",
+          "trivia_qa_840.wav",
+          "trivia_qa_279.wav",
+          "trivia_qa_439.wav"
+        ],
+        "population_expected": 1000,
+        "population_ids_hash": "9d22a54814caacbab4b5bf88573d6d4dac9d4a7e324cf8c50f3a88f6db1bfa8e"
+      },
+      "source_file_sha256": "7225483a5fe40a477f8d3e93ae74e8b869c24f8f27afd1a6089e6806073d3248",
+      "source_dataset": "trivia_qa",
+      "suite_version": "moss-spoken-qa-v2"
+    },
+    "web_questions-s2t": {
+      "id": "web_questions-s2t",
+      "kind": "openaudio",
+      "task": "s2t",
+      "language": "en",
+      "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b",
+      "split": "web_questions",
+      "expected": 20,
+      "samples_hash": "b4f1c12d8beeb099104b5974b768467feff8664bb12dcb72c64fe86ac1d9660a",
+      "prompt_version": "moss-chat-v1",
+      "prompt": {
+        "name": "spoken-qa-short-en-v1",
+        "system": "Answer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+      },
+      "prompt_hash": "5f42b840fb66f353ed979ac2222146c96fdb44ebb501050843db1e714e389df2",
+      "selection": {
+        "algorithm": "sha256-id-v1",
+        "seed": 42,
+        "size": 20,
+        "ids": [
+          "web_questions_682.wav",
+          "web_questions_1976.wav",
+          "web_questions_129.wav",
+          "web_questions_984.wav",
+          "web_questions_84.wav",
+          "web_questions_1287.wav",
+          "web_questions_65.wav",
+          "web_questions_985.wav",
+          "web_questions_1885.wav",
+          "web_questions_694.wav",
+          "web_questions_334.wav",
+          "web_questions_859.wav",
+          "web_questions_457.wav",
+          "web_questions_1211.wav",
+          "web_questions_1908.wav",
+          "web_questions_1812.wav",
+          "web_questions_1431.wav",
+          "web_questions_2011.wav",
+          "web_questions_917.wav",
+          "web_questions_2021.wav"
+        ],
+        "population_expected": 1000,
+        "population_ids_hash": "a78cda3bd65c23520b8b059e9f5d683875733f321528f32c0cb81524b9d86129"
+      },
+      "source_file_sha256": "d4d26b7273635c8cbc7ea4462308bb3903bab2b725f8b11080231f1c4202f28f",
+      "source_dataset": "web_questions",
+      "suite_version": "moss-spoken-qa-v2"
+    },
+    "web_questions-s2s": {
+      "id": "web_questions-s2s",
+      "kind": "openaudio",
+      "task": "s2s",
+      "language": "en",
+      "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b",
+      "split": "web_questions",
+      "expected": 20,
+      "samples_hash": "0e1fe464ebbd8a4763b36d1f345519c3a1b2c285a5bebd55e69d4b2cb5b888ea",
+      "prompt_version": "moss-chat-v1",
+      "prompt": {
+        "name": "spoken-qa-short-en-v1",
+        "system": "Answer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
+      },
+      "prompt_hash": "5f42b840fb66f353ed979ac2222146c96fdb44ebb501050843db1e714e389df2",
+      "selection": {
+        "algorithm": "sha256-id-v1",
+        "seed": 42,
+        "size": 20,
+        "ids": [
+          "web_questions_682.wav",
+          "web_questions_1976.wav",
+          "web_questions_129.wav",
+          "web_questions_984.wav",
+          "web_questions_84.wav",
+          "web_questions_1287.wav",
+          "web_questions_65.wav",
+          "web_questions_985.wav",
+          "web_questions_1885.wav",
+          "web_questions_694.wav",
+          "web_questions_334.wav",
+          "web_questions_859.wav",
+          "web_questions_457.wav",
+          "web_questions_1211.wav",
+          "web_questions_1908.wav",
+          "web_questions_1812.wav",
+          "web_questions_1431.wav",
+          "web_questions_2011.wav",
+          "web_questions_917.wav",
+          "web_questions_2021.wav"
+        ],
+        "population_expected": 1000,
+        "population_ids_hash": "a78cda3bd65c23520b8b059e9f5d683875733f321528f32c0cb81524b9d86129"
+      },
+      "source_file_sha256": "d4d26b7273635c8cbc7ea4462308bb3903bab2b725f8b11080231f1c4202f28f",
+      "source_dataset": "web_questions",
+      "suite_version": "moss-spoken-qa-v2"
+    }
+  },
+  "sampling": {
+    "seed": 42,
+    "temperature": 0,
+    "top_k": 1,
+    "max_tokens": 512
+  },
+  "scoring_assets": {
+    "asr_en.path": {
+      "chat_template.json": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+      "config.json": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f",
+      "generation_config.json": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+      "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+      "model-00001-of-00002.safetensors": "a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6",
+      "model-00002-of-00002.safetensors": "6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc",
+      "model.safetensors.index.json": "f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60",
+      "preprocessor_config.json": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+      "tokenizer_config.json": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+      "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    "utmos.path": {
+      "utmos.jit": "3080923f49ee69eb81ad875491eef94e533bf329d70e0cc37fa23745c464669d"
+    }
+  },
+  "scoring_environment": {
+    "torch": "2.14.1",
+    "torchaudio": "2.11.0",
+    "soundfile": "0.14.0",
+    "numpy": "2.3.5",
+    "aiohttp": "3.14.5",
+    "jiwer": "4.0.0",
+    "openai-whisper": "20250625",
+    "zhon": "2.1.1"
+  },
+  "resource_accounting": {
+    "prior_gpu_seconds": 37984,
+    "unit_gpu_seconds": 1088,
+    "cumulative_gpu_seconds": 39072,
+    "cumulative_gpu_hours": 10.853333333333333,
+    "remaining_gpu_hours": 39.14666666666667,
+    "all_jobs_terminal": true,
+    "max_simultaneous_gpus": 1,
+    "all_owned_groups_released": true,
+    "jobs": [
+      {
+        "job_id": 77820,
+        "name": "moss-paired-qa-quick",
+        "start": "2026-10-31T18:05:07",
+        "elapsed_s": 990,
+        "gpus": 1,
+        "gpu_seconds": 990,
+        "state": "FAILED",
+        "slurm_exit_code": "1:0"
+      },
+      {
+        "job_id": 77821,
+        "name": "moss-paired-qa-score",
+        "start": "2026-10-31T18:21:37",
+        "elapsed_s": 98,
+        "gpus": 1,
+        "gpu_seconds": 98,
+        "state": "COMPLETED",
+        "slurm_exit_code": "0:0"
+      }
+    ]
+  },
+  "evidence_hashes": {
+    "run-01/quick/manifest.json": "a590bcb41de11ff3a964071dbbe4eeae870643d6976e0acc22406096ac0e2c36",
+    "run-01/quick/performance.json": "0454eb669ab2f80378b2af45429c6d392ab3172beaddae3a6852e22365aca011",
+    "run-01/quick/quality.json": "9227d5bcfbb7dc6f95d82c4d152bfc6f0cd5c85ccfb24f89738456882cf66fa9",
+    "run-01/quick/correctness/correctness.json": "0ea598b93451ff25194551b7ee91a65fe6aa815c041eb68042ae7114ddd9cf0b",
+    "run-01/control.json": "009a97fbb17750622ad3484a84c6d6a2fa294b51ffffea3356115f707f3a1d7e",
+    "score-01/control.json": "db0e88d112a943d2f5fd01cfdde8b67ece2cd7c04eb61a9e1f73eaf160f655e8",
+    "data-manifest.json": "4a95e6ef21d330f604469715a411cf601a40508ac57b5fe3163a9e79a91a2917",
+    "run-01/identity.json": "6cba71a8e946b56eb97f39fba5b0dc0f507acb1ed6afaa5ce1d137365a2d4ace"
+  }
+}

@@ -48,3 +48,11 @@ and archived strict-C2 behavior, implemented using the standalone ChatClient
 without importing service-management fixtures.
 
 Qwen ASR scoring follows the current official `benchmarks/tasks/asr.py` multipart fields and default fan-out 32, verified on 2026-10-31. New async orchestration adds transcript identity/hash caching without importing model-serving code. UTMOS WAV decoding uses soundfile float32, matching the upstream audio fallback; the 16kHz torchaudio resampling, PCM16 conversion and prediction remain unchanged.
+
+The current `moss-spoken-qa-v2` named suites reuse the existing OpenAudioBench
+CSV mapping for LLaMA Questions, TriviaQA and WebQuestions, paired in S2T/S2S.
+The vendored SeedTTS loader is retained unchanged for source provenance; the
+current client rejects chat-based SeedTTS runs and defers isolated Decoder
+quality evaluation. Existing correctness providers and numerical algorithms are
+unchanged; named inference now gates on their complete report and offline
+reporting validates its bound artifacts.
