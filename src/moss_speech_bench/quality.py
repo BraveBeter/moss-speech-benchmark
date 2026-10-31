@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from ._vendor.accuracy import extract_answer_letter
 from .datasets import QUICK_SCORE_BUDGET_S
-from .reporting import _load_manifest, collect_cell
+from .reporting import _format_value, _load_manifest, collect_cell, dataset_columns
 from .storage import digest, read_json, read_jsonl, source_identity, write_json
 
 
@@ -423,7 +423,9 @@ def score(directory, config_path=None, time_budget=None):
     return result
 
 
-def quality_report(root):
+def read_quality(root):
+    """Validate persisted quality evidence without rewriting its report."""
+    root = Path(root)
     path = root / "quality.json"
     if not path.exists():
         return None
@@ -475,18 +477,38 @@ def quality_report(root):
             or fully_scored != saved["scored"]
         ):
             raise ValueError("Quality summary/coverage mismatch")
+    return quality
+
+
+def quality_report(root):
+    root = Path(root)
+    quality = read_quality(root)
+    if quality:
+        (root / "quality.md").write_text(
+            "\n".join(quality_markdown(quality, read_json(root / "manifest.json"))) + "\n"
+        )
+    return quality
+
+
+def quality_markdown(quality, manifest):
+    """One quality table, including an empty table for runs that were not scored."""
     lines = [
         "# Offline quality",
         "",
-        f"Status: {quality['status']}",
+        f"评分状态：{quality['status'] if quality else '未执行'}。",
         "",
-        "| Cell | Metric | Expected | Scored | Value |",
-        "|---|---|---:|---:|---:|",
+        "| 数据集 | 模态/语言 | 并发 | 轮次 | 指标 | 结果 | 评分/全部 |",
+        "|---|---|---:|---:|---|---:|---:|",
     ]
+    if not quality:
+        return lines
+    cells = {cell["id"]: cell for cell in manifest["cells"]}
     for name, cell in quality["cells"].items():
+        dataset, modality = dataset_columns(manifest, cells[name]["dataset"])
+        concurrency = _format_value(cells[name].get("concurrency"))
+        repeat = _format_value(cells[name].get("repeat"))
         for metric, value in cell["metrics"].items():
             lines.append(
-                f"| {name} | {metric} | {value['expected']} | {value['scored']} | {value['value']} |"
+                f"| {dataset} | {modality} | {concurrency} | {repeat} | {metric} | {_format_value(value['value'])} | {value['scored']}/{value['expected']} |"
             )
-    (root / "quality.md").write_text("\n".join(lines) + "\n")
-    return quality
+    return lines

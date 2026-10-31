@@ -86,6 +86,7 @@ async def test_quick_inference_cohort_and_resume_contract(server, tmp_path, corr
         )
         assert len(metadata["selection"]["ids"]) == 20
     assert "Mode: quick" in (a.output_dir / "summary.md").read_text()
+    assert "状态：pass；通过 9/9 组" in (a.output_dir / "summary.md").read_text()
     a.resume = True
     await run(a)
     assert len(state["payloads"]) == 120
@@ -202,6 +203,9 @@ async def test_named_gate_blocks_http_and_proof_is_required(server, tmp_path, co
     blocked_summary = (a.output_dir / "summary.md").read_text()
     assert "被测服务代码：分支 `未记录`" in blocked_summary
     assert "评测客户端代码：分支" in blocked_summary
+    assert "## 正确性测试" in blocked_summary and "状态：fail" in blocked_summary
+    assert "## 性能测试" in blocked_summary and "correctness_blocked" in blocked_summary
+    assert "## 质量测试" in blocked_summary and "评分状态：未执行" in blocked_summary
     correctness_stub["status"] = "pass"
     a.output_dir = tmp_path / "passed"
     await run(a)

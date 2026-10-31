@@ -347,7 +347,8 @@ async def provider(gate, config, output):
     return dict(status="pass", checks=checks, exit_code=process.returncode)
 
 
-def render_correctness(root):
+def read_correctness(root):
+    """Validate frozen correctness evidence without rewriting its report."""
     root = Path(root)
     manifest = read_json(root / "correctness.json")
     assert set(manifest["gates"]) == set(GATES), "Required gate allowlist changed"
@@ -366,6 +367,13 @@ def render_correctness(root):
     states = [g["status"] for g in manifest["gates"].values()]
     status = "fail" if "fail" in states else "pass" if states == ["pass"] * 9 else "incomplete"
     assert manifest["status"] == status, "Summary inconsistent with required gates"
+    return manifest
+
+
+def render_correctness(root):
+    root = Path(root)
+    manifest = read_correctness(root)
+    status = manifest["status"]
     lines = [
         "# MOSS correctness",
         "",

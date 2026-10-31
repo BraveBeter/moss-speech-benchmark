@@ -21,7 +21,7 @@ from .datasets import (
     deferred_evaluations,
     load_workload,
 )
-from .reporting import code_identity_lines, collect_cell, report
+from .reporting import code_identity_lines, collect_cell, report, summary_markdown
 from .storage import dumps, read_json, source_identity, write_json
 
 
@@ -243,16 +243,27 @@ async def run(args):
         )
         correctness_elapsed = time.monotonic() - gate_start
         if suite["status"] != "pass":
-            (args.output_dir / "summary.md").write_text(
-                "# Correctness blocked inference\n\n"
-                + "\n".join(
-                    code_identity_lines(
-                        {"contract": {"deployment": deployment}, "client": source_identity()}
-                    )
-                )
-                + "\nNo formal requests were sent. "
-                "See correctness/correctness.md.\n"
+            proof = dict(
+                status=suite["status"],
+                report="correctness/correctness.json",
+                sha256=hashlib.sha256((gate_dir / "correctness.json").read_bytes()).hexdigest(),
             )
+            lines = summary_markdown(
+                args.output_dir,
+                {
+                    "contract": {"mode": args.mode, "datasets": {}},
+                    "state": "correctness_blocked",
+                    "cells": [],
+                    "correctness": proof,
+                },
+                {},
+                None,
+                code_identity_lines(
+                    {"contract": {"deployment": deployment}, "client": source_identity()}
+                ),
+                notes=["Correctness blocked inference; no formal requests were sent."],
+            )
+            (args.output_dir / "summary.md").write_text("\n".join(lines) + "\n")
             return {"correctness": {"failed": 1}}
         correctness = dict(
             status="pass",

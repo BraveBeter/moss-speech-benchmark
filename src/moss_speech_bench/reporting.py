@@ -3,6 +3,7 @@
 import hashlib
 from dataclasses import fields
 from pathlib import Path
+from urllib.parse import quote
 
 from ._vendor.metrics.performance import compute_speed_metrics
 from .client import Observation
@@ -143,7 +144,7 @@ def _differences(a, b, prefix=""):
 def _load_manifest(root):
     manifest = read_json(root / "manifest.json")
     if manifest["contract"].get("suite_version"):
-        from .correctness import render_correctness
+        from .correctness import read_correctness
 
         proof = manifest.get("correctness", {})
         if not isinstance(proof, dict) or proof.get("status") != "pass":
@@ -152,7 +153,7 @@ def _load_manifest(root):
             raise ValueError("Invalid correctness report path")
         if hashlib.sha256((root / proof["report"]).read_bytes()).hexdigest() != proof["sha256"]:
             raise ValueError("Correctness proof hash mismatch")
-        if render_correctness(root / "correctness")["status"] != "pass":
+        if read_correctness(root / "correctness")["status"] != "pass":
             raise ValueError("Correctness gate is incomplete")
     for name, metadata in manifest["contract"]["datasets"].items():
         rows = read_jsonl(root / "inputs" / f"{name}.jsonl")
@@ -176,6 +177,10 @@ def code_identity_lines(manifest, supplement=None):
             if identity.get(field) is not None and identity[field] != value:
                 raise ValueError(f"Conflicting saved code identity: {key}.{field}")
             identity[field] = value
+        if key == "client":
+            for field, value in (deployment.get("client_build") or {}).items():
+                if identity.get(field) is None:
+                    identity[field] = value
         branch = identity.get("branch") or (
             "detached HEAD" if identity.get("branch") == "" else "未记录"
         )
@@ -185,6 +190,155 @@ def code_identity_lines(manifest, supplement=None):
         if not identity.get("commit") and identity.get("source_hash"):
             line += f" source_hash `{identity['source_hash']}`。"
         lines.extend([line, ""])
+    return lines
+
+
+def _format_value(value):
+    return "N/A" if value is None else f"{value:.5g}" if isinstance(value, float) else str(value)
+
+
+def dataset_columns(manifest, dataset_id):
+    """Use frozen dataset metadata for labels, with an explicit local-sample fallback."""
+    metadata = manifest["contract"]["datasets"][dataset_id]
+    kind = metadata.get("kind") or "unrecorded"
+    source = (
+        metadata.get("source_dataset")
+        or f"{'custom-json' if kind == 'json' else kind}/{dataset_id}"
+    )
+    label = str(source).replace("|", r"\|").replace("\n", " ")
+    dataset = f"[{label}](inputs/{quote(dataset_id, safe='')}.jsonl)"
+    modality = (
+        f"{(metadata.get('task') or 'N/A').upper()} / {(metadata.get('language') or 'N/A').upper()}"
+    )
+    return dataset, modality
+
+
+def performance_table(manifest, performance):
+    """Render the one compact performance table used by live and archived summaries."""
+    columns = (
+        ("latency_median_s", "E2E P50 (s)"),
+        ("text_ttft_p95_s", "TTFT P95 (s)"),
+        ("audio_ttfp_p95_s", "TTFA P95 (s)"),
+        ("rtf_mean", "RTF Mean"),
+        ("audio_throughput_s_per_s", "audio-s/s"),
+        ("throughput_qps", "QPS"),
+    )
+    lines = [
+        "| 数据集 | 模态/语言 | 并发 | 轮次 | 成功/全部 | "
+        + " | ".join(label for _, label in columns)
+        + " |",
+        "|---|---|---:|---:|---:|" + "---:|" * len(columns),
+    ]
+    for cell in manifest["cells"]:
+        dataset, modality = dataset_columns(manifest, cell["dataset"])
+        values = performance[cell["id"]]
+        prefix = [
+            dataset,
+            modality,
+            _format_value(cell.get("concurrency")),
+            _format_value(cell.get("repeat")),
+            f"{values['succeeded']}/{values['expected']}",
+        ]
+        lines.append(
+            "| "
+            + " | ".join([*prefix, *(_format_value(values.get(field)) for field, _ in columns)])
+            + " |"
+        )
+    return lines
+
+
+def correctness_section(root, manifest):
+    """Display manifest-bound checks; keep an empty table when no proof is bound."""
+    root = Path(root)
+    proof = manifest.get("correctness")
+    header = ["| 检查项 | 通过/全部 | 状态 |", "|---|---:|---|"]
+    if not isinstance(proof, dict):
+        lines = [
+            "## 正确性测试",
+            "",
+            "状态：未绑定本run的完整正确性证明。外部检查见执行说明。",
+            "",
+            *header,
+        ]
+        if (root / "correctness/correctness.json").exists():
+            lines.extend(["", "[未绑定的本地报告](correctness/correctness.json)"])
+        return lines
+    if proof.get("report") != "correctness/correctness.json":
+        raise ValueError("Invalid correctness report path")
+    path = root / proof["report"]
+    if hashlib.sha256(path.read_bytes()).hexdigest() != proof.get("sha256"):
+        raise ValueError("Correctness proof hash mismatch")
+    from .correctness import read_correctness
+
+    suite = read_correctness(root / "correctness")
+    if suite["status"] != proof.get("status"):
+        raise ValueError("Correctness proof status mismatch")
+    names = (
+        "身份与输入",
+        "CPU回归",
+        "Processor / HF",
+        "CUDA回归",
+        "AR / HF",
+        "Encoder / HF",
+        "Decoder / HF",
+        "服务协议",
+        "并发隔离",
+    )
+    passed = sum(gate["status"] == "pass" for gate in suite["gates"].values())
+    lines = [
+        "## 正确性测试",
+        "",
+        f"状态：{suite['status']}；通过 {passed}/{len(suite['gates'])} 组。",
+        "",
+        *header,
+    ]
+    for gate_id, name in zip(sorted(suite["gates"]), names, strict=True):
+        gate = suite["gates"][gate_id]
+        checks = gate.get("checks", [])
+        count = sum(check["status"] == "pass" for check in checks)
+        coverage = f"{count}/{len(checks)}" if checks else "N/A"
+        lines.append(f"| {gate_id} {name} | {coverage} | {gate['status']} |")
+    target = (
+        "correctness/correctness.md"
+        if (root / "correctness/correctness.md").exists()
+        else proof["report"]
+    )
+    lines.extend(["", f"[完整正确性报告]({target})；通过/全部表示记录的检查项数。"])
+    return lines
+
+
+def summary_markdown(root, manifest, performance, quality, identity_lines, notes=()):
+    """The single summary template for inference, offline rebuilds and archive views."""
+    from .quality import quality_markdown
+
+    lines = [
+        "# MOSS-Speech Benchmark",
+        "",
+        *identity_lines,
+        f"Mode: {manifest['contract']['mode']}; recorded inference state: {manifest['state']}.",
+        "",
+        *correctness_section(root, manifest),
+        "",
+        "## 性能测试",
+        "",
+        *performance_table(manifest, performance),
+        "",
+        (
+            "成功/全部以计划请求数为分母；失败、未执行和length明细见 [performance.json](performance.json)。"
+            if performance
+            else "性能阶段未执行，暂无性能记录。"
+        ),
+        "audio-s/s = 成功请求生成音频总秒数 / 本组墙钟秒数；QPS = 成功请求数 / 本组墙钟秒数。无音频或计时不完整记 N/A。",
+        "E2E为完整响应耗时；TTFT为首个非空文本；TTFA为首个非空PCM（可能含静音）。分位数逐组计算。",
+        "custom-json表示自定义固定样例，数据集链接指向本run冻结输入；原始测量编号保留在performance.json。",
+    ]
+    for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
+        lines.extend(["", f"Deferred: {component}: {item['reason']} Full suite is incomplete."])
+    quality_lines = quality_markdown(quality, manifest)
+    quality_lines[0] = "## 质量测试"
+    lines.extend(["", *quality_lines])
+    if notes:
+        lines.extend(["", *notes])
     return lines
 
 
@@ -240,46 +394,7 @@ def report(directory, baseline=None, allow_difference=()):
             },
         },
     )
-    lines = [
-        "# MOSS-Speech performance",
-        "",
-        *identity_lines,
-        f"Mode: {manifest['contract']['mode']}; state: {manifest['state']}. Quick results are a fixed subset, not full Daily coverage.",
-        "",
-        "Quality: see offline quality section when scored. Correctness: see correctness/correctness.md for named suites.",
-        "",
-        "TTFA = first nonempty PCM SSE event (audio_ttfp_*); native TTFC and server GPU peak: N/A.",
-        "Each row is one continuous dataset/concurrency/repeat; percentiles are not pooled across repeats.",
-        "",
-        "| Dataset / C / repeat | Expected | Attempted | Succeeded | Failed | Scored | Length | Latency P50 s | TTFA P95 s | RTF mean | QPS |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-    ]
-
-    for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
-        lines.extend(["", f"Deferred: {component}: {item['reason']} Full suite is incomplete."])
-
-    def fmt(x):
-        return "N/A" if x is None else f"{x:.5g}" if isinstance(x, float) else str(x)
-
-    for key, metrics in performance.items():
-        columns = [
-            quality["cells"].get(key, {}).get("scored", 0)
-            if k == "scored" and quality
-            else metrics.get(k)
-            for k in (
-                "expected",
-                "attempted",
-                "succeeded",
-                "failed",
-                "scored",
-                "length_count",
-                "latency_median_s",
-                "audio_ttfp_p95_s",
-                "rtf_mean",
-                "throughput_qps",
-            )
-        ]
-        lines.append("| " + key + " | " + " | ".join(map(fmt, columns)) + " |")
+    lines = summary_markdown(root, manifest, performance, quality, identity_lines)
     (root / "summary.md").write_text("\n".join(lines) + "\n")
     if baseline:
         base_root = Path(baseline)
@@ -333,7 +448,7 @@ def report(directory, baseline=None, allow_difference=()):
                         "percent": percent,
                     }
                     table.append(
-                        f"| {key} | {metric} | {fmt(x)} | {fmt(y)} | {fmt(delta)} | {fmt(percent)} |"
+                        f"| {key} | {metric} | {_format_value(x)} | {_format_value(y)} | {_format_value(delta)} | {_format_value(percent)} |"
                     )
                 comparison["cells"][key] = changes
         write_json(root / "comparison.json", comparison)
@@ -347,8 +462,6 @@ def report(directory, baseline=None, allow_difference=()):
         )
         combined["scored"] = sum(c["scored"] for c in quality["cells"].values())
         write_json(summary_path, combined)
-        with (root / "summary.md").open("a") as output:
-            output.write("\n" + (root / "quality.md").read_text())
         if baseline and (Path(baseline) / "quality.json").exists():
             previous = quality_report(Path(baseline))
             differences = _differences(previous["contract"], quality["contract"])

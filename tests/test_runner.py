@@ -48,6 +48,12 @@ async def test_sweep_warmup_rebuild_and_resume(server, tmp_path):
         assert value["length_count"] == 3
         assert value["scored"] == 0
         assert value["audio_throughput_s_per_s"] > 0
+    markdown = (output / "summary.md").read_text()
+    assert "| audio-s/s | QPS |" in markdown
+    assert "[custom-json/en](inputs/en.jsonl)" in markdown
+    assert "## 正确性测试" in markdown and "未绑定本run" in markdown
+    assert "## 性能测试" in markdown
+    assert "## 质量测试" in markdown and "评分状态：未执行" in markdown
     original = (output / "performance.json").read_bytes()
     report(output)
     assert (output / "performance.json").read_bytes() == original
@@ -326,6 +332,131 @@ def test_summary_identifies_unknown_wheel_and_detached_checkout():
     assert "被测服务代码：分支 `未记录`；commit `未记录`；工作区：未记录。" in text
     assert "source_hash `wheel-source`" in text
     text = "\n".join(
+        code_identity_lines(
+            {
+                "contract": {
+                    "deployment": {
+                        "client_build": {
+                            "branch": "frozen-wheel",
+                            "commit": "e" * 40,
+                            "dirty": False,
+                        }
+                    }
+                },
+                "client": {"commit": None, "source_hash": "wheel-source"},
+            }
+        )
+    )
+    assert "分支 `frozen-wheel`" in text and "commit `" + "e" * 40 + "`" in text
+    text = "\n".join(
         code_identity_lines({"client": dict(branch="", commit="d" * 40, dirty=" M file.py")})
     )
     assert "分支 `detached HEAD`" in text and "工作区：有未提交修改" in text
+
+
+def test_performance_table_displays_recorded_dataset_and_audio_throughput():
+    from moss_speech_bench.reporting import performance_table
+
+    audio = summarize(
+        [
+            {"is_success": True, "audio_duration_s": 2, "latency_s": 1},
+            {"is_success": True, "audio_duration_s": 4, "latency_s": 1},
+            {"is_success": False, "audio_duration_s": 99, "latency_s": 1},
+        ],
+        3,
+        5,
+    )
+    assert audio["audio_throughput_s_per_s"] == 1.2  # successful audio seconds / cell wall time
+    text = summarize([{"is_success": True, "latency_s": 1}], 1, 2)
+    manifest = dict(
+        contract={
+            "datasets": {
+                "opaque": {
+                    "kind": "openaudio",
+                    "source_dataset": "llama_questions",
+                    "task": "s2s",
+                    "language": "en",
+                },
+                "t2t-en": {"kind": "json", "task": "t2t", "language": "en"},
+            }
+        },
+        cells=[
+            {"id": "opaque-c4-r1", "dataset": "opaque", "concurrency": 4, "repeat": 1},
+            {"id": "t2t-en-c1-r1", "dataset": "t2t-en", "concurrency": 1, "repeat": 1},
+        ],
+    )
+    table = performance_table(
+        manifest,
+        {"opaque-c4-r1": audio, "t2t-en-c1-r1": text},
+    )
+    header = [c.strip() for c in table[0].strip("|").split("|")]
+    rows = [
+        dict(zip(header, [c.strip() for c in line.strip("|").split("|")], strict=True))
+        for line in table[2:]
+    ]
+    assert rows[0]["数据集"] == "[llama_questions](inputs/opaque.jsonl)"
+    assert rows[0]["audio-s/s"] == "1.2" and rows[0]["QPS"] == "0.4"
+    assert rows[0]["成功/全部"] == "2/3" and rows[0]["并发"] == "4"
+    assert rows[0]["模态/语言"] == "S2S / EN"
+    assert rows[1]["数据集"] == "[custom-json/t2t-en](inputs/t2t-en.jsonl)"
+    assert rows[1]["audio-s/s"] == "N/A" and rows[1]["QPS"] == "0.5"
+
+
+def test_correctness_summary_validates_binding_and_reports_missing_or_incomplete(tmp_path):
+    import hashlib
+
+    from moss_speech_bench.correctness import GATES
+    from moss_speech_bench.reporting import correctness_section
+    from moss_speech_bench.storage import digest
+
+    path = tmp_path / "correctness/correctness.json"
+    suite = dict(
+        config={},
+        config_hash=digest({}),
+        status="pass",
+        gates={g: dict(status="pass", checks=[{"status": "pass"}]) for g in GATES},
+    )
+    write_json(path, suite)
+    view = path.with_suffix(".md")
+    view.write_text("Keep the historical detailed view unchanged.\n")
+    proof = dict(
+        status="pass",
+        report="correctness/correctness.json",
+        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+    lines = "\n".join(correctness_section(tmp_path, {"correctness": proof}))
+    assert "状态：pass；通过 9/9 组" in lines
+    assert view.read_text() == "Keep the historical detailed view unchanged.\n"
+    unbound = "\n".join(correctness_section(tmp_path, {"correctness": "outside_client_scope"}))
+    assert "未绑定本run" in unbound and "状态：pass" not in unbound
+    suite["gates"]["C04"] = {"status": "unsupported", "checks": []}
+    suite["status"] = proof["status"] = "incomplete"
+    write_json(path, suite)
+    proof["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    lines = "\n".join(correctness_section(tmp_path, {"correctness": proof}))
+    assert "状态：incomplete" in lines and "| C04 AR / HF | N/A | unsupported |" in lines
+    proof["sha256"] = "invalid"
+    with pytest.raises(ValueError, match="hash mismatch"):
+        correctness_section(tmp_path, {"correctness": proof})
+
+
+def test_single_summary_template_keeps_empty_phase_tables(tmp_path):
+    from pathlib import Path
+
+    from moss_speech_bench.reporting import summary_markdown
+
+    manifest = {"contract": {"mode": "custom", "datasets": {}}, "state": "complete", "cells": []}
+    text = "\n".join(summary_markdown(tmp_path, manifest, {}, None, []))
+    headings = ("## 正确性测试", "## 性能测试", "## 质量测试")
+    assert [text.index(h) for h in headings] == sorted(text.index(h) for h in headings)
+    assert all(text.count(h) == 1 for h in headings)
+    correctness, _, quality = text.split("## ")[1:]
+    assert len([line for line in correctness.splitlines() if line.startswith("|")]) == 2
+    assert len([line for line in quality.splitlines() if line.startswith("|")]) == 2
+    assert "| 成功/全部 |" in text and "| 评分/全部 |" in text
+    assert "Expected" not in text and "Attempted" not in text and "Succeeded" not in text
+    assert "(performance.json)" not in text
+    template = (Path(__file__).parents[1] / "SUMMARY_TEMPLATE.md").read_text()
+    for line in text.splitlines():
+        if line.startswith("| 数据集") or line.startswith("| 检查项"):
+            assert line in template
