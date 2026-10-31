@@ -3,19 +3,21 @@ import base64
 import io
 import json
 import wave
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from aiohttp import web
 
 from moss_speech_bench.correctness import (
-    BASE,
     numerical_checks,
     render_correctness,
     run_correctness,
 )
 from moss_speech_bench.correctness_http import run_http
 from moss_speech_bench.storage import read_json, write_json
+
+CANDIDATE_SHA = "a" * 40
 
 
 @pytest_asyncio.fixture
@@ -157,7 +159,12 @@ async def test_identity_fail_stops_dependents_and_report_hashes(tmp_path):
     config = tmp_path / "config.json"
     write_json(
         config,
-        dict(workspace_root=".", profile="eager-base", core_sha=BASE, core_root=str(tmp_path)),
+        dict(
+            workspace_root=".",
+            profile="eager-base",
+            core_sha=CANDIDATE_SHA,
+            core_root=str(tmp_path),
+        ),
     )
     suite = await run_correctness(config, tmp_path / "output")
     assert suite["status"] == "fail" and suite["gates"]["C01"]["status"] == "not_run"
@@ -169,7 +176,7 @@ async def test_identity_fail_stops_dependents_and_report_hashes(tmp_path):
 
 async def test_diagnostic_subset_never_passes_full_suite(correct_server, tmp_path):
     config, state = correct_server
-    config.update(workspace_root=".", profile="eager-base", core_sha=BASE)
+    config.update(workspace_root=".", profile="eager-base", core_sha=CANDIDATE_SHA)
     path = tmp_path / "config.json"
     write_json(path, config)
     result = await run_correctness(path, tmp_path / "output", "C08")
@@ -227,7 +234,7 @@ def test_provider_entry_imports_candidate_and_rejects_zero_collection(tmp_path):
 
 async def test_resume_preserves_failures_and_reuses_complete_gates(correct_server, tmp_path):
     config, state = correct_server
-    config.update(workspace_root=".", profile="eager-base", core_sha=BASE)
+    config.update(workspace_root=".", profile="eager-base", core_sha=CANDIDATE_SHA)
     path = tmp_path / "config.json"
     write_json(path, config)
     state["corrupt"] = True
@@ -293,7 +300,7 @@ async def test_correctness_cli_and_offline_report_in_installed_runtime(correct_s
     import sys
 
     config, state = correct_server
-    config.update(workspace_root=".", profile="eager-base", core_sha=BASE)
+    config.update(workspace_root=".", profile="eager-base", core_sha=CANDIDATE_SHA)
     path = tmp_path / "config.json"
     write_json(path, config)
     executable = os.environ.get("BENCHMARK_TEST_PYTHON", sys.executable)
@@ -356,17 +363,19 @@ def test_terminal_trace_preserves_grid_and_rejects_path_traversal(tmp_path, monk
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_native_profile_keeps_base_identity_strict(tmp_path):
+def test_profiles_pin_candidates_and_explicit_native_libraries(tmp_path):
     from moss_speech_bench.correctness import load_suite
 
     path = tmp_path / "suite.json"
 
     def configured(**changes):
-        write_json(path, dict(profile="eager-base", core_sha=BASE, workspace_root=".", **changes))
+        write_json(
+            path, dict(profile="eager-base", core_sha=CANDIDATE_SHA, workspace_root=".", **changes)
+        )
         return path
 
-    assert load_suite(configured())["core_sha"] == BASE
-    with pytest.raises(ValueError, match="original norm"):
+    assert load_suite(configured())["core_sha"] == CANDIDATE_SHA
+    with pytest.raises(ValueError, match="native-norm profile"):
         load_suite(configured(native_norm_library="/explicit/native.so"))
     write_json(
         path,
@@ -402,7 +411,7 @@ async def test_native_tail_research_cannot_open_http_gates(tmp_path, monkeypatch
 
     config = dict(
         profile="native-tail-research",
-        core_sha=BASE,
+        core_sha=CANDIDATE_SHA,
         workspace_root=".",
         native_tail_source="/explicit/reference.py",
         native_tail_abi="/explicit/header-abi.so",
@@ -424,3 +433,168 @@ async def test_native_tail_research_cannot_open_http_gates(tmp_path, monkeypatch
     assert result["status"] == "incomplete" and calls == ["C03"]
     assert result["gates"]["C03"]["status"] == "unsupported"
     assert result["gates"]["C07"]["status"] == "not_run"
+
+
+@pytest.fixture
+def pinned_candidate(tmp_path):
+    """Independent Git history and tiny pinned assets exercise identity admission only."""
+    import subprocess
+
+    from moss_speech_bench.correctness import file_hash
+
+    core = tmp_path / "candidate"
+    core.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(core),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.org",
+                *args,
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+
+    git("init", "--initial-branch=unrelated-candidate")
+    (core / "code.py").write_text("# independent candidate\n")
+    git("add", ".")
+    git("commit", "-m", "independent candidate")
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    config = dict(
+        profile="hf-reference",
+        workspace_root=str(tmp_path),
+        core_root=str(core),
+        core_sha=git("rev-parse", "HEAD"),
+    )
+    for key in ("audio_en", "audio_zh", "voice_wav", "code_profile"):
+        path = assets / key
+        path.write_text(key)
+        config[key] = str(path)
+    model, codec = assets / "model", assets / "codec"
+    model.mkdir()
+    (codec / "flow").mkdir(parents=True)
+    config.update(model_path=str(model), codec_path=str(codec))
+    write_json(model / "model.safetensors.index.json", {"weight_map": {"weight": "shard"}})
+    (model / "shard").write_bytes(b"not actual model weights")
+    for name in ("model.safetensors", "flow/flow.pt", "flow/hift.pt", "flow/campplus.onnx"):
+        (codec / name).write_bytes(b"pinned identity fixture")
+    reports = {
+        "C02": dict(cases={str(i): {} for i in range(8)}),
+        "C04": dict(
+            model_revision="cff025bb41d8459d59abac0b5e44aba7f659ec9e",
+            determinism={"seed": 20261027},
+            requested_profile={"attention_backend": "sdpa", "logits_to_keep": 0},
+        ),
+        "C05": dict(
+            audio_inputs={
+                name: {"sha256": file_hash(config[key])}
+                for name, key in (("en", "audio_en"), ("cn", "audio_zh"), ("voice", "voice_wav"))
+            }
+        ),
+        "C06": dict(
+            code_profile_sha256=file_hash(config["code_profile"]),
+            voice_conditioning={"voice_input_sha256": file_hash(config["voice_wav"])},
+        ),
+    }
+    config["golden"] = {}
+    for gate, reference in reports.items():
+        reference.update(status="passed", serving_core_modules_imported=[])
+        if gate == "C04":
+            reference["inputs_json_sha256"] = file_hash(config["golden"]["C02"]["report"])
+        path = assets / f"{gate}.json"
+        write_json(path, reference)
+        config["golden"][gate] = {"report": str(path)}
+    config["assets"] = [
+        dict(id=p.name, path=str(p), level="fresh_full_hash", sha256=file_hash(p))
+        for p in sorted(assets.rglob("*"))
+        if p.is_file()
+    ]
+    # Capacity, chunking and device placement differ from the historical eager deployment.
+    config["deployment"] = dict(
+        core_sha=config["core_sha"],
+        gpu_count=3,
+        ar_tp=1,
+        ar_graph=False,
+        voice_sha256=file_hash(config["voice_wav"]),
+        ar_dtype="bfloat16",
+        codec_dtype="float32",
+        attention="torch_native",
+        max_running_requests=16,
+        max_total_tokens=8192,
+        chunk_size=50,
+        placement=dict(ar=2, encoder=1, vocoder=0),
+    )
+    return config, git
+
+
+async def test_independent_candidate_admission_keeps_reference_and_resume_checks(
+    pinned_candidate, tmp_path
+):
+    from moss_speech_bench.correctness import load_suite, preflight
+
+    config, git = pinned_candidate
+    path = tmp_path / "suite.json"
+    write_json(path, config)
+    admitted = preflight(load_suite(path))
+    assert admitted["status"] == "pass"
+    assert admitted["identity"]["core_branch"] == "unrelated-candidate"
+    assert admitted["identity"]["core_sha"] == config["core_sha"]
+    with pytest.raises(AssertionError, match="Candidate SHA mismatch"):
+        preflight(dict(config, core_sha="0" * 40))
+    core = Path(config["core_root"])
+    (core / "code.py").write_text("# changed candidate\n")
+    with pytest.raises(AssertionError, match="clean"):
+        preflight(config)
+    git("add", ".")
+    git("commit", "-m", "new candidate")
+    config["core_sha"] = config["deployment"]["core_sha"] = git("rev-parse", "HEAD")
+    write_json(path, config)
+    output = tmp_path / "correctness"
+    suite = await run_correctness(path, output, "C00")
+    assert suite["gates"]["C00"]["status"] == "pass" and suite["status"] == "incomplete"
+    git("commit", "--allow-empty", "-m", "another candidate")
+    config["core_sha"] = config["deployment"]["core_sha"] = git("rev-parse", "HEAD")
+    write_json(path, config)
+    with pytest.raises(ValueError, match="resume identity mismatch"):
+        await run_correctness(path, output, "C00", resume=True)
+    reference = Path(config["golden"]["C02"]["report"])
+    reference.write_text("corrupt reference")
+    with pytest.raises(AssertionError, match="Asset hash mismatch"):
+        preflight(config)
+
+
+@pytest.mark.parametrize(
+    "gate,changes",
+    [
+        ("C04", {"ar_graph": True}),
+        ("C04", {"attention": "flashinfer"}),
+        ("C06", {"codec_dtype": "bfloat16"}),
+    ],
+)
+async def test_uncovered_compute_path_never_runs_an_eager_fallback(
+    pinned_candidate, tmp_path, monkeypatch, gate, changes
+):
+    import moss_speech_bench.correctness as correctness
+
+    config, _ = pinned_candidate
+    config["deployment"].update(changes)
+    path = tmp_path / "suite.json"
+    write_json(path, config)
+
+    async def forbidden_http(*_):
+        raise AssertionError("Uncovered compute path must block inference")
+
+    monkeypatch.setattr(correctness, "run_http", forbidden_http)
+    result = await run_correctness(path, tmp_path / "result", f"C00,{gate},C07")
+    assert result["gates"]["C00"]["status"] == "pass"
+    assert result["gates"][gate]["status"] == "unsupported"
+    assert "declared compute path" in result["gates"][gate]["reason"]
+    assert result["gates"]["C07"]["status"] == "not_run"
+    assert result["status"] == "incomplete"

@@ -44,7 +44,7 @@ MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
 
 Quick、Daily、Full的真实infer都必须提供 [correctness.json](examples/correctness.json) 的本机配置。固定C00–C08全部通过后，才发送任何正式性能请求；失败/缺项/unsupported停止后续推理，不能用 `--checks` 绕过。正确性配置的服务地址必须与受测地址一致。
 
-详细覆盖、独立HF golden与Slurm环境见[CORRECTNESS.md](CORRECTNESS.md)。所有模型测试和fixture仍在目标仓库；客户端通过隔离provider调用，不导入模型计算代码。当前正确性profile限定固定eager base，不能拿它直接认证其他模型配置。
+详细覆盖、独立HF golden与Slurm环境见[CORRECTNESS.md](CORRECTNESS.md)。所有模型测试和fixture仍在目标仓库；客户端通过隔离provider调用，不导入模型计算代码。正确性默认使用 `hf-reference`：候选可为任意分支/完整提交，不要求属于或继承 eager base；HF参考、输入和容差单独固定。eager base仅可作为性能对照。现有provider未覆盖的精度/kernel/graph路径会明确返回unsupported，不能通过eager回退获得通过。
 
 可以由外层在启动服务前，通过同一运行目录的`correctness/`执行C00–C06；服务就绪后，infer会校验其源码/资产/配置身份，完成C07/C08。只复用同目录内且身份、产物hash有效的已通过gate，失败不自动重试。独立完整运行也保留：
 

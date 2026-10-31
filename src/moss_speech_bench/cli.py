@@ -229,6 +229,9 @@ async def run(args):
         check_config = load_suite(args.correctness_config)
         if check_config.get("base_url", "").rstrip("/") != args.base_url.rstrip("/"):
             raise ValueError("Correctness endpoint differs from the benchmark endpoint")
+        deployed_sha = ((deployment or {}).get("server") or {}).get("commit")
+        if deployed_sha and deployed_sha != check_config.get("core_sha"):
+            raise ValueError("Deployment commit differs from the correctness candidate SHA")
         if not args.resume:
             check_fresh_output(args.output_dir, args.mode)
         gate_start = time.monotonic()

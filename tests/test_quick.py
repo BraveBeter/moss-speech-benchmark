@@ -279,3 +279,29 @@ async def test_quick_preserves_outer_execution_records_and_rejects_prior_results
     with pytest.raises(ValueError, match="Output directory is not empty"):
         await run(arguments)
     assert len(state["payloads"]) == 120
+
+
+async def test_declared_server_must_match_correctness_candidate(
+    server, tmp_path, correctness_stub, monkeypatch
+):
+    from moss_speech_bench import correctness
+
+    url, state = server
+    correctness_stub["url"] = url
+    monkeypatch.setattr(correctness, "load_suite", lambda _: dict(base_url=url, core_sha="a" * 40))
+    deployment = tmp_path / "deployment.json"
+    write_json(deployment, {"server": {"commit": "b" * 40}})
+    a = args(
+        daily_workload(tmp_path),
+        url,
+        tmp_path / "run",
+        "--mode",
+        "quick",
+        "--correctness-config",
+        "fixture.json",
+        "--deployment",
+        str(deployment),
+    )
+    with pytest.raises(ValueError, match="correctness candidate SHA"):
+        await run(a)
+    assert not state["payloads"] and correctness_stub["calls"] == 0

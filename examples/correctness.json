@@ -1,8 +1,8 @@
 {
-  "profile": "eager-base",
+  "profile": "hf-reference",
   "workspace_root": "../..",
-  "core_sha": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
-  "core_root": "{workspace_root}/worktrees/moss-speech-base",
+  "core_sha": "REPLACE_WITH_FULL_CANDIDATE_SHA",
+  "core_root": "{workspace_root}/worktrees/YOUR_CANDIDATE",
   "candidate_python": "{workspace_root}/.audit/envs/current-main/bin/python",
   "model_path": "{workspace_root}/.audit/assets/MOSS-Speech",
   "codec_path": "{workspace_root}/.audit/assets/MOSS-Speech-Codec",
@@ -332,7 +332,7 @@
   "base_url": "http://127.0.0.1:8000",
   "model": "moss-speech",
   "deployment": {
-    "core_sha": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
+    "core_sha": "REPLACE_WITH_FULL_CANDIDATE_SHA",
     "gpu_count": 1,
     "ar_tp": 1,
     "ar_graph": false,

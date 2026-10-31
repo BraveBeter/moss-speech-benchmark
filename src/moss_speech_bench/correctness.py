@@ -1,4 +1,4 @@
-"""Fixed eager-base suite orchestration and artifact validation (no model imports)."""
+"""Candidate correctness against independent HF references and service invariants."""
 
 import asyncio
 import hashlib
@@ -11,7 +11,6 @@ from pathlib import Path
 from .correctness_http import run_http
 from .storage import digest, read_json, source_identity, write_json
 
-BASE = "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6"
 GATES = tuple("C%02d" % i for i in range(9))
 PROVIDERS = Path(__file__).with_name("providers")
 
@@ -40,19 +39,17 @@ def load_suite(path):
         return value
 
     config = resolve(config)
-    if config.get("profile") == "eager-base":
-        if config.get("core_sha") != BASE or config.get("native_norm_library") is not None:
-            raise ValueError("eager-base profile requires the fixed base SHA and original norm")
-    elif config.get("profile") == "native-tail-research":
-        if config.get("core_sha") != BASE or not all(
-            config.get(k) for k in ("native_tail_source", "native_tail_abi")
-        ):
-            raise ValueError(
-                "native-tail research requires the fixed base and explicit source/header ABI library"
-            )
-    elif config.get("profile") == "native-norm":
-        if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
-            raise ValueError("native-norm requires an explicit full candidate SHA")
+    if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
+        raise ValueError("Correctness requires an explicit full candidate SHA")
+    profile = config.get("profile")
+    if profile in ("hf-reference", "eager-base"):
+        # eager-base is a legacy spelling of the reference compute adapter, not a Git pin.
+        if config.get("native_norm_library") is not None:
+            raise ValueError("Use the native-norm profile to qualify a native norm library")
+    elif profile == "native-tail-research":
+        if not all(config.get(k) for k in ("native_tail_source", "native_tail_abi")):
+            raise ValueError("native-tail research requires explicit source/header ABI library")
+    elif profile == "native-norm":
         if not config.get("native_norm_library"):
             raise ValueError("native-norm requires an explicit native library")
     else:
@@ -67,7 +64,6 @@ def preflight(config):
         return subprocess.check_output(["git", "-C", str(core), *args], text=True).strip()
 
     assert git("rev-parse", "HEAD") == config["core_sha"], "Candidate SHA mismatch"
-    assert git("merge-base", BASE, config["core_sha"]) == BASE, "Candidate must descend from base"
     assert not git("status", "--porcelain"), "Candidate worktree must be clean"
     verified = []
     assert config["assets"], "Asset/golden allowlist is required"
@@ -132,32 +128,25 @@ def preflight(config):
         assert library in listed, "Native library must be in the pinned asset allowlist"
         assert config["deployment"].get("native_norm_library_sha256") == file_hash(library)
     deployment = config.get("deployment", {})
-    assert deployment.get("core_sha") == config["core_sha"] and deployment.get("gpu_count") in (
-        1,
-        2,
-    )
-    assert deployment.get("ar_tp") == 1 and deployment.get("ar_graph") is False
+    assert deployment.get("core_sha") == config["core_sha"], "Deployment candidate SHA mismatch"
+    gpu_count = deployment.get("gpu_count")
+    assert type(gpu_count) is int and gpu_count > 0, "Invalid deployment GPU count"
     assert deployment.get("voice_sha256") == file_hash(config["voice_wav"])
-    fixed = dict(
-        ar_dtype="bfloat16",
-        codec_dtype="float32",
-        attention="torch_native",
-        context_limit=512,
-        context_length=1024,
-        max_total_tokens=4096,
-        max_running_requests=4,
-        max_queued_requests=20,
-        chunk_size=25,
+    placement = deployment.get("placement", {})
+    assert set(placement) == {"ar", "encoder", "vocoder"}, "Incomplete deployment placement"
+    assert all(type(device) is int and 0 <= device < gpu_count for device in placement.values()), (
+        "Deployment placement is outside allocated devices"
     )
-    assert all(deployment.get(k) == v for k, v in fixed.items()), (
-        "Deployment differs from eager profile"
-    )
-    device = 0 if deployment["gpu_count"] == 1 else 1
-    assert deployment["placement"] == dict(ar=0, encoder=device, vocoder=device)
     return dict(
         status="pass",
         checks=[dict(id="identity-assets-golden", status="pass")],
-        identity=dict(core_sha=config["core_sha"], core_root=str(core), client=source_identity()),
+        identity=dict(
+            core_sha=config["core_sha"],
+            core_branch=git("branch", "--show-current"),
+            core_dirty=False,
+            core_root=str(core),
+            client=source_identity(),
+        ),
         assets=verified,
         deployment=deployment,
         lineage="Independent HF golden reuse; candidate results are new executions",
@@ -221,6 +210,24 @@ def numerical_checks(gate, report, golden):
 
 
 async def provider(gate, config, output):
+    # These adapters compare the declared candidate path, never a silent eager fallback.
+    supported = (
+        {"ar_dtype": "bfloat16", "attention": "torch_native", "ar_tp": 1, "ar_graph": False}
+        if gate == "C04"
+        else {"codec_dtype": "float32"}
+        if gate in ("C05", "C06")
+        else {}
+    )
+    differences = {
+        key: {"declared": config.get("deployment", {}).get(key), "supported": value}
+        for key, value in supported.items()
+        if config.get("deployment", {}).get(key) != value
+    }
+    if differences:
+        return dict(
+            status="unsupported",
+            reason=f"{gate} adapter does not cover the declared compute path: {differences}",
+        )
     output = Path(output).resolve()
     spec = config.get("providers", {}).get(gate, {})
     python = spec.get("python", config["candidate_python"])
@@ -363,6 +370,11 @@ def render_correctness(root):
         "# MOSS correctness",
         "",
         f"Status: {status}",
+        "",
+        f"Candidate commit: `{manifest['config'].get('core_sha', '未记录')}`; "
+        f"branch: `{manifest['gates']['C00'].get('identity', {}).get('core_branch', '未记录')}`.",
+        "",
+        "Numerical oracle: independent pinned HF outputs. Git ancestry and performance baselines are not correctness criteria.",
         "",
         "Historical golden is reference evidence; only new provider/HTTP executions count.",
         "Quality and performance are separate, not evaluated by this suite.",

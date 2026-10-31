@@ -1,6 +1,11 @@
-# Eager-base correctness and numerical alignment
+# Correctness against independent HF references
 
-Unified entry for the fixed eager base `084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6`.
+Unified entry for any explicitly pinned candidate branch/commit. The numerical
+oracle is the independent HF reference bundle; Git ancestry and a performance
+baseline are not correctness criteria. `hf-reference` is the default profile;
+`eager-base` remains a legacy spelling with the same candidate-independent rules.
+The candidate HEAD must match `core_sha` and the worktree must be clean. The
+example requires you to fill in the candidate path and its full commit SHA.
 The client remains free of Torch, SGLang and HF imports. Model checks run in a
 separate, explicitly configured interpreter; HTTP checks connect to an existing
 service. The suite never starts a server or discovers historical scripts.
@@ -9,7 +14,7 @@ service. The suite never starts a server or discovers historical scripts.
 
 | Gate | Required coverage | Execution |
 |---|---|---|
-| C00 | Core SHA/clean tree, 50 pinned assets, independent golden/input/voice identities, deployment profile | Control process; full file hashing |
+| C00 | Candidate SHA/clean tree, 50 pinned assets, independent golden/input/voice identities, declared deployment | Control process; full file hashing |
 | C01 | Fixed 514 node IDs including MOSS's 10 unit-test files and shared regressions | Target environment, CPU engine |
 | C02 | 8 processor profiles, 76 named exact comparisons | Separate candidate CPU process, admitted independent HF JSON |
 | C03 | Native prefill/decode isolation + two CUDA seed parameters, 3 tests | Slurm GPU provider |
@@ -40,7 +45,9 @@ checks remain in the provider.
 Use [examples/correctness.json](examples/correctness.json). Its workspace root
 is relative to the configuration file; every other path explicitly uses
 `{workspace_root}`. Update the candidate interpreter, existing model assets,
-reference locations and operator-supplied resolved deployment metadata. Asset
+reference locations and operator-supplied resolved deployment metadata. Set both
+`core_sha` and `deployment.core_sha` to the actual candidate, with no ancestor
+requirement. Asset
 hashes are fixed before execution. The example binds this workspace's admitted
 independent HF bundle; it does not distribute weights or tensor files.
 
@@ -125,6 +132,23 @@ successes are preserved as historical evidence, not new acceptance results.
 正确性阶段也必须归入工作区`benchmark-results/<run_id>/correctness/`，与同次性能/质量结果共用run根。只运行正确性时，在run根保留简短summary.md入口，详细断言仍在correctness/correctness.md；不向.audit或源码仓库另存报告。
 
 
-The explicit native-norm profile accepts a full clean descendant SHA of the fixed base and an operator-built library pinned by the same asset allowlist and deployment SHA256. It preserves all C00–C08 base checks, numerical thresholds and golden identities; C01/C03 append fixed norm fallback/actual-CUDA qualification cases. C04 installs the same norm library on the candidate model before its full-vocabulary comparison. A successful eager-base certificate does not qualify the native-norm profile, and profile/library changes invalidate resume identity. Native service manifests must enable this exact library independently; the client never enables a service feature by changing its own environment.
+The explicit native-norm profile accepts any full clean candidate SHA and an operator-built library pinned by the same asset allowlist and deployment SHA256. It preserves all C00–C08 checks, numerical thresholds and golden identities; C01/C03 append fixed norm fallback/actual-CUDA qualification cases. C04 installs the same norm library on the candidate model before its full-vocabulary comparison. A successful eager-base certificate does not qualify the native-norm profile, and profile/library changes invalidate resume identity. Native service manifests must enable this exact library independently; the client never enables a service feature by changing its own environment.
 
-The native-tail-research profile is deliberately incomplete: it pins the fixed base, the original Lt reference module and a helper compiled against the current headers. C03 retains the base native tests, checks actual struct sizes/offsets, observes the original version rejection, and runs a separately labelled in-memory version-override diagnostic on checkpoint affine weights. No on-disk guard is changed. Those local full/tail affine observations cannot qualify complete CFM, prefix ownership or a serving branch; C03 remains unsupported and subsequent HTTP/Quick gates stay blocked. The report retains every API failure and numerical mismatch.
+The native-tail-research profile is deliberately incomplete: it pins the candidate SHA, the original Lt reference module and a helper compiled against the current headers. C03 retains the base native tests, checks actual struct sizes/offsets, observes the original version rejection, and runs a separately labelled in-memory version-override diagnostic on checkpoint affine weights. No on-disk guard is changed. Those local full/tail affine observations cannot qualify complete CFM, prefix ownership or a serving branch; C03 remains unsupported and subsequent HTTP/Quick gates stay blocked. The report retains every API failure and numerical mismatch.
+
+## Compute-path coverage
+
+Candidate identity and numerical-adapter support are separate. C00 admits any
+clean pinned candidate and validates the declared placement and voice; capacity,
+chunk size and GPU count are not required to match the historical eager service.
+HF weights/revisions, deterministic inputs, independent goldens and all existing
+numerical thresholds remain unchanged.
+
+The current C04 adapter covers BF16, torch_native attention, TP1 and AR graph off;
+C05/C06 cover FP32 Codec. A different declared compute path is `unsupported` at
+the relevant gate, which blocks dependent inference. The client never silently
+substitutes the eager path to qualify a graph/kernel configuration it did not run.
+Extend the corresponding adapter to execute and compare that actual path before
+claiming support. A passing branch-independent admission check is not a model
+numerical pass. C01/C03 still require the fixed test node IDs in the candidate;
+missing or skipped tests are never treated as success.
