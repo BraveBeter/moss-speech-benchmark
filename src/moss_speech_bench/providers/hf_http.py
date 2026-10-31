@@ -42,6 +42,7 @@ def main():
         action="store_true",
         help="Explicit PCM16 I/O adapter for environments without TorchCodec",
     )
+    parser.add_argument("--default-repetition-penalty", type=float, default=1.0)
     args = parser.parse_args()
     assert os.environ.get("SLURM_JOB_ID"), "Reference generation requires Slurm"
     import numpy as np
@@ -161,7 +162,9 @@ def main():
                     use_cache=True,
                     max_new_tokens=limit,
                     min_new_tokens=0,
-                    repetition_penalty=payload.get("repetition_penalty", 1.0),
+                    repetition_penalty=payload.get(
+                        "repetition_penalty", args.default_repetition_penalty
+                    ),
                     pad_token_id=model.config.modality_pad_token_id,
                     eos_token_id=[
                         processor.tokenizer.pad_token_id,
@@ -178,7 +181,17 @@ def main():
                         json.dumps(
                             {
                                 "input_ids": inputs["input_ids"].tolist(),
+                                "attention_mask": inputs["attention_mask"].tolist(),
                                 "generated_grid": tokens.tolist(),
+                                "raw_decode": processor.tokenizer.decode(
+                                    tokens[0, :, 0].tolist(), skip_special_tokens=False
+                                ),
+                                "visible_decode": processor.tokenizer.decode(
+                                    tokens[0, :, 0].tolist(), skip_special_tokens=True
+                                ),
+                                "token_strings": processor.tokenizer.convert_ids_to_tokens(
+                                    tokens[0, :, 0].tolist()
+                                ),
                                 "generation_config": config.to_dict(),
                             },
                             indent=2,

@@ -340,3 +340,17 @@ async def test_correctness_cli_and_offline_report_in_installed_runtime(correct_s
     (output / "C08/attempts.json").write_text("[]")
     code, error = await invoke("--phase", "correctness-report", "--output-dir", str(output))
     assert code == 2 and "hash mismatch" in error
+
+
+def test_terminal_trace_preserves_grid_and_rejects_path_traversal(tmp_path, monkeypatch):
+    from moss_speech_bench.providers.sg_trace import write_trace
+
+    monkeypatch.setenv("MOSS_TRACE_DIRECTORY", str(tmp_path))
+    grid = [[151667, 17], [151645, 16384]]
+    write_trace("fixed-request", "ar", {"output_grid": grid})
+    saved = json.loads((tmp_path / "fixed-request.ar.json").read_text())
+    assert saved == {"request_id": "fixed-request", "output_grid": grid}
+    assert grid == [[151667, 17], [151645, 16384]]
+    with pytest.raises(ValueError, match="Invalid trace"):
+        write_trace("../escape", "ar", {})
+    assert not list(tmp_path.glob("*.tmp"))
