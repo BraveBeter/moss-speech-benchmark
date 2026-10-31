@@ -1,0 +1,31 @@
+{
+  "device": "cpu",
+  "choices": "AB",
+  "asr_en": {
+    "backend": "qwen3-asr",
+    "base_url": "http://127.0.0.1:8001",
+    "model": "Qwen/Qwen3-ASR-1.7B",
+    "concurrency": 32,
+    "path": "/path/to/local/qwen3-asr",
+    "revision": "REPLACE_WITH_MODEL_COMMIT",
+    "language_hint": "auto"
+  },
+  "asr_zh": {
+    "backend": "qwen3-asr",
+    "base_url": "http://127.0.0.1:8001",
+    "model": "Qwen/Qwen3-ASR-1.7B",
+    "concurrency": 32,
+    "path": "/path/to/local/qwen3-asr",
+    "revision": "REPLACE_WITH_MODEL_COMMIT",
+    "language_hint": "auto"
+  },
+  "sim": {
+    "path": "/path/to/wavlm_large_finetune.pth",
+    "wavlm_base": "/path/to/WavLM-Large.pt",
+    "reference": "/path/to/actual-server-voice.wav"
+  },
+  "utmos": {
+    "path": "/path/to/utmos.jit"
+  },
+  "qa_answer_mention": true
+}

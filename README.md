@@ -202,3 +202,5 @@ Quick的目标是推理25分钟＋评分5分钟。`--time-budget SECONDS`可分�
 2026-10-31单卡A800实测：正式推理1167.58秒＋最终评分61.37秒＝20分29秒，120条全部完成；计入本次启动、排错与重试实际30分55秒，未达到整个流程30分钟目标。两个成功作业的工作时间合计23分14秒仅为分段统计，尚未连续无故障复跑；详见[完整报告](reports/eager-base-quick-20261031.md)。
 
 TTS朗读与S2S问答协议、显式prompt配置和隔离HF对照入口见 [PROTOCOLS.md](PROTOCOLS.md)。默认提示词及严格EM保持原口径，答案提及诊断必须显式启用，不能作为语义准确率。
+
+TTS/S2S异常样本的HF/eager配对、ASR语言歧义及协议候选见[质量诊断报告](reports/eager-base-quality-diagnosis-20261031.md)和[协议说明](PROTOCOLS.md)。新system提示与auto-ASR均需显式配置并建立新baseline；严格TTS协议尚未全量验收。

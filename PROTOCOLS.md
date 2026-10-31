@@ -101,3 +101,10 @@ For speech QA, enable `qa_answer_mention` in a copy of the scoring config only
 when the additional diagnostic is wanted; whole-answer EM remains mandatory.
 A future semantic QA evaluator must preserve its model/prompt version, per-case
 judgment and validation against manually labeled answers before formal adoption.
+
+The paired diagnosis found a same-WAV disagreement: forcing Chinese produced a
+Chinese paraphrase while auto detection produced an English translation. This
+requires independent ASR or listening review; never choose the lower error rate.
+`examples/scoring-protocol-candidate.json` explicitly selects auto language and
+adds answer mention diagnostics. The original fixed-language scoring example
+is unchanged. Neither candidate has passed the full Daily workload.
