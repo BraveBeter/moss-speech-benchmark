@@ -10,6 +10,13 @@ The client remains free of Torch, SGLang and HF imports. Model checks run in a
 separate, explicitly configured interpreter; HTTP checks connect to an existing
 service. The suite never starts a server or discovers historical scripts.
 
+The client is used for model correctness, quality and performance evaluations.
+Routine unit tests, Graph/Kernel development tests, debugging, profiling, linting
+and package checks run directly with the owning repository tools. Graph/Kernel
+implementations and their specialized tests belong to the model/engine repository;
+a formal evaluation may invoke those tests and collect their evidence. Development
+checks do not automatically trigger a full suite or qualify a model branch.
+
 ## Gates and data
 
 | Gate | Required coverage | Execution |
