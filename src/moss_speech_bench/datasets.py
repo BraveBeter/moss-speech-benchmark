@@ -13,11 +13,17 @@ QA_TASKS = ("s2t", "s2s")
 QUICK_SAMPLES = 20
 QUICK_INFER_BUDGET_S = 2040
 QUICK_SCORE_BUDGET_S = 180
-SUITE_VERSION = "moss-spoken-qa-v2"
+SUITE_VERSION = "moss-spoken-qa-v3"
 SHORT_ANSWER_PROMPT = {
     "name": "spoken-qa-short-en-v1",
     "system": "Answer the spoken question in English using only a short answer phrase. "
     "Do not repeat the question or add explanations.",
+}
+
+NATIVE_TEXT_SYSTEM = "You are a helpful assistant. Respond with text outputs."
+TEXT_ANSWER_PROMPT = {
+    "name": "spoken-qa-native-text-short-en-v1",
+    "system": NATIVE_TEXT_SYSTEM + "\n" + SHORT_ANSWER_PROMPT["system"],
 }
 
 
@@ -236,7 +242,18 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
                 if task in task_prompts:
                     resolved["prompt"] = task_prompts[task]
                 else:
-                    resolved.setdefault("prompt", SHORT_ANSWER_PROMPT)
+                    resolved.setdefault(
+                        "prompt", TEXT_ANSWER_PROMPT if task == "s2t" else SHORT_ANSWER_PROMPT
+                    )
+                prompt = resolved["prompt"]
+                if task == "s2t" and isinstance(prompt, dict):
+                    system = prompt.get("system")
+                    if (
+                        isinstance(system, str)
+                        and system.strip()
+                        and not system.startswith(NATIVE_TEXT_SYSTEM)
+                    ):
+                        resolved["prompt"] = dict(prompt, system=NATIVE_TEXT_SYSTEM + "\n" + system)
             rows, metadata = prepare_dataset(
                 resolved,
                 path.parent,

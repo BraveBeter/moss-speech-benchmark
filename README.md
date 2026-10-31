@@ -95,7 +95,7 @@ Quick目标为包含前置正确性、推理、评分及服务准备在内约40�
 
 ## 质量协议
 
-[PROTOCOLS.md](PROTOCOLS.md)定义当前 `moss-spoken-qa-v2` 与历史协议边界。三个集合默认使用相同的 `spoken-qa-short-en-v1` system提示：只给简短英文答案，不重复问题或解释；不包含参考答案。可显式配置prompt，内容/hash进入归档。
+[PROTOCOLS.md](PROTOCOLS.md)定义当前 `moss-spoken-qa-v3` 与历史协议边界。三个集合的 S2T 默认使用 `spoken-qa-native-text-short-en-v1`：完整保留原生 `You are a helpful assistant. Respond with text outputs.`，再追加简短英文答案要求。S2S继续使用原 `spoken-qa-short-en-v1`，请求内容不变。命名套件的S2T即使配置了dataset/task system，也会保留该原生文字前缀；已有完整前缀不重复追加。有效prompt、内容/hash均进入归档，不包含参考答案。
 
 | 路径 | 离线指标 | 局限 |
 |---|---|---|
@@ -136,7 +136,7 @@ python -m build
 
 全部本地结果从`$MOSS_BENCHMARK_RESULTS_ROOT/README.md`查看，各run只打开其`summary.md`；运行目录不纳入客户端Git。历史脚本/绝对路径保留执行时身份，迁移后的当前位置以结果索引及迁移清单为准。
 
-Named speech-QA workload JSON may set `task_prompts` to override the system prompt for one task. The following entry leaves S2S and all selected question IDs unchanged:
+Named speech-QA workload JSON may set `task_prompts` to customize one task. S2T keeps the native text-output prefix before these instructions; S2S and selected question IDs stay unchanged:
 
 ```json
 "task_prompts": {
@@ -147,4 +147,4 @@ Named speech-QA workload JSON may set `task_prompts` to override the system prom
 }
 ```
 
-Each task prompt overrides any dataset prompt. Its prepared payload and prompt hashes remain in the measurement contract; changing them requires a fresh output and a matching new performance baseline. Empty-output failure rules remain unchanged.
+Each task prompt takes precedence over the dataset prompt. Named S2T preserves the native text prefix; `custom` diagnostics retain their explicitly configured raw prompts. The effective prompt and payload hashes enter the measurement contract. Suite v3 changes S2T requests, so use a fresh run and baseline; old v2 outputs are not rewritten or resumed under v3. Empty-output failure rules remain unchanged.

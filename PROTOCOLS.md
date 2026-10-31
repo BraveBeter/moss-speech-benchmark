@@ -1,6 +1,6 @@
 # MOSS-Speech evaluation protocols
 
-## Current suite: moss-spoken-qa-v2
+## Current suite: moss-spoken-qa-v3
 
 Quick, Daily and Full begin with the existing C00–C08 correctness suite.
 Inference is blocked unless all nine gates pass. Correctness artifacts and hashes
@@ -20,9 +20,18 @@ IDs, revisions, actual prompts, sampling and output hashes remain reproducible.
 20–50 questions per dataset are configurable; a larger cohort needs a new
 baseline and a fresh check of the 40-minute target.
 
-The default `spoken-qa-short-en-v1` system prompt asks for a short English answer
-phrase without explanations. It contains no gold answer. Overrides are explicit
-and versioned in the input contract. Do not silently truncate generated answers,
+S2T uses `spoken-qa-native-text-short-en-v1`: preserve the native system text
+`You are a helpful assistant. Respond with text outputs.` and append the short
+English answer instructions. Dataset and task-specific S2T system prompts also
+retain this prefix; an existing complete prefix is not duplicated. An empty prompt
+leaves the initial user turn intact so the Processor inserts its native default.
+S2S keeps the original `spoken-qa-short-en-v1` request unchanged. Custom diagnostic
+mode preserves explicitly configured raw prompts for historical reproduction.
+
+The effective prompt contains no gold answer and is frozen with its hash in the
+input contract. Suite v3 requires a fresh run and baseline; historical v2 outputs
+and scores stay unchanged. This repair targets output modality, not answer
+correctness or the unresolved repeated-text/long-answer cases. Do not silently truncate generated answers,
 change max_tokens, or remove difficult examples to improve runtime or scores.
 
 S2T uses normalized whole-answer exact match, retained as `accuracy` for format

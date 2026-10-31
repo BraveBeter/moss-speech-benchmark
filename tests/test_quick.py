@@ -4,7 +4,7 @@ import pytest
 from test_runner import args, workload
 
 from moss_speech_bench.cli import run
-from moss_speech_bench.datasets import QA_DATASETS, load_workload
+from moss_speech_bench.datasets import NATIVE_TEXT_SYSTEM, QA_DATASETS, load_workload
 from moss_speech_bench.quality import quality_report, score
 from moss_speech_bench.reporting import report
 from moss_speech_bench.storage import read_json, write_json
@@ -42,7 +42,10 @@ def test_fixed_selection_and_only_selected_audio_read(tmp_path):
         assert text[1]["selection"] == audio[1]["selection"]
         assert text[0][0]["payload"]["modalities"] == ["text"]
         assert audio[0][0]["payload"]["modalities"] == ["audio"]
-        assert text[0][0]["payload"]["messages"] == audio[0][0]["payload"]["messages"]
+        assert text[0][0]["payload"]["messages"][1:] == audio[0][0]["payload"]["messages"][1:]
+        assert text[0][0]["payload"]["messages"][0]["content"] == (
+            NATIVE_TEXT_SYSTEM + "\n" + audio[0][0]["payload"]["messages"][0]["content"]
+        )
     path = tmp_path / "llama_questions.json"
     rows = read_json(path)
     selected = set(original["llama_questions-s2s"][1]["selection"]["ids"])
@@ -327,7 +330,10 @@ async def test_task_prompt_override_preserves_speech_cohort_and_rejects_resume(
         for left, right in zip(old[0], new[0], strict=True):
             assert left["id"] == right["id"] and left["expected"] == right["expected"]
             assert left["payload"]["messages"][1:] == right["payload"]["messages"][1:]
-            assert right["payload"]["messages"][0]["content"] == prompt["system"]
+            assert (
+                right["payload"]["messages"][0]["content"]
+                == NATIVE_TEXT_SYSTEM + "\n" + prompt["system"]
+            )
     correctness_stub["url"] = url
     options = args(
         config, url, tmp_path / "quick", "--mode", "quick", "--correctness-config", "fixture.json"
@@ -346,3 +352,48 @@ async def test_task_prompt_override_preserves_speech_cohort_and_rejects_resume(
         write_json(config, value)
         with pytest.raises(ValueError, match="task_prompts"):
             load_workload(config, "test", True, "quick")
+
+
+@pytest.mark.parametrize("mode", ["quick", "daily", "full"])
+def test_named_s2t_keeps_native_modality_with_custom_prompts(tmp_path, mode):
+    from moss_speech_bench.storage import digest
+
+    config = daily_workload(tmp_path)
+    value = read_json(config)
+    custom = {"name": "dataset-short", "system": "Answer briefly."}
+    for spec in value["datasets"]:
+        spec["prompt"] = custom
+    write_json(config, value)
+    before = config.read_bytes()
+    datasets, _, _ = load_workload(config, "test", True, mode)
+    assert config.read_bytes() == before
+    for name in QA_DATASETS:
+        text_rows, text_meta = datasets[name + "-s2t"]
+        audio_rows, audio_meta = datasets[name + "-s2s"]
+        effective = text_meta["prompt"]
+        assert effective["system"] == NATIVE_TEXT_SYSTEM + "\nAnswer briefly."
+        assert text_meta["prompt_hash"] == digest(effective)
+        assert text_rows[0]["payload"]["messages"][0]["content"] == effective["system"]
+        assert audio_meta["prompt"] == custom
+        assert audio_rows[0]["payload"]["messages"][0]["content"] == custom["system"]
+    # Existing explicit native prompts are preserved byte for byte, without duplication.
+    explicit = {"name": "explicit", "system": NATIVE_TEXT_SYSTEM + "\nUse a short answer."}
+    value["task_prompts"] = {"s2t": explicit}
+    write_json(config, value)
+    datasets, _, _ = load_workload(config, "test", True, mode)
+    assert all(
+        metadata["prompt"] == explicit
+        for name, (_, metadata) in datasets.items()
+        if name.endswith("-s2t")
+    )
+
+
+def test_empty_s2t_prompt_leaves_processor_native_default_available(tmp_path):
+    config = daily_workload(tmp_path)
+    value = read_json(config)
+    value["task_prompts"] = {"s2t": {}}
+    write_json(config, value)
+    datasets, _, _ = load_workload(config, "test", True, "quick")
+    for name, (rows, _) in datasets.items():
+        if name.endswith("-s2t"):
+            assert rows[0]["payload"]["messages"][0]["role"] == "user"
