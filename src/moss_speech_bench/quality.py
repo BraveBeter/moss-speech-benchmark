@@ -5,6 +5,8 @@ import importlib.metadata
 import math
 import re
 import string
+import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -238,7 +240,14 @@ def aggregate(records):
             "scored": len(values),
             "statuses": {
                 s: sum(r["status"] == s for r in rows)
-                for s in ("scored", "failed", "unavailable", "generation_failed", "not_attempted")
+                for s in (
+                    "scored",
+                    "failed",
+                    "unavailable",
+                    "generation_failed",
+                    "not_attempted",
+                    "budget_exhausted",
+                )
             },
         }
         if metric in ("wer", "cer"):
@@ -261,9 +270,20 @@ def aggregate(records):
     return summary
 
 
-def score(directory, config_path=None):
+def score(directory, config_path=None, time_budget=None):
     root = Path(directory)
     manifest = _load_manifest(root)
+    started = time.monotonic()
+    budget = (
+        time_budget
+        if time_budget is not None
+        else 300
+        if manifest["contract"]["mode"] == "quick"
+        else None
+    )
+    if budget is not None and not 0 < budget < float("inf"):
+        raise ValueError("Time budget must be positive and finite")
+    invocation = uuid.uuid4().hex
     config, contract = configuration(config_path)
     backend = LocalScorers(config)
     # Match the fixed reference to the actual deployment, never a SeedTTS clone prompt.
@@ -296,7 +316,7 @@ def score(directory, config_path=None):
         cache = root / "quality" / digest(dict(contract=contract, binding=binding))
         cache.mkdir(parents=True, exist_ok=True)
         by_id = {r["sample_id"]: r for r in rows}
-        records = []
+        records, record_entries = [], []
         for sample in inputs:
             file = cache / (digest(sample["id"]) + ".json")
             if file.exists():
@@ -311,13 +331,25 @@ def score(directory, config_path=None):
                     if row and row.get("wav_path")
                     else None
                 )
+                exhausted = budget is not None and time.monotonic() - started >= budget
+                if exhausted and row and row["is_success"]:
+                    metrics = {
+                        k: dict(status="budget_exhausted")
+                        for k in evaluate(sample, None, None, backend, config)
+                    }
+                    file = cache / "attempts" / invocation / file.name
+                else:
+                    metrics = evaluate(sample, row, audio, backend, config)
                 record = {
                     "sample_id": sample["id"],
                     "finish_reason": row.get("finish_reason") if row else None,
-                    "metrics": evaluate(sample, row, audio, backend, config),
+                    "metrics": metrics,
                 }
                 write_json(file, dict(record, _hash=digest(record)))
             records.append(record)
+            record_entries.append(
+                dict(path=str(file.relative_to(root)), hash=digest(read_json(file)))
+            )
         cells[cell["id"]] = dict(
             scored=sum(
                 all(v["status"] == "scored" for k, v in r["metrics"].items() if k != "transcript")
@@ -325,12 +357,16 @@ def score(directory, config_path=None):
             ),
             binding=binding,
             metrics=aggregate(records),
-            records=[
-                dict(path=str(f.relative_to(root)), hash=digest(read_json(f)))
-                for f in sorted(cache.glob("*.json"))
-            ],
+            records=record_entries,
         )
-    result = dict(contract=contract, selection=selection, cells=cells, status="complete")
+    result = dict(
+        contract=contract,
+        selection=selection,
+        cells=cells,
+        status="complete",
+        time_budget_s=budget,
+        elapsed_s=time.monotonic() - started,
+    )
     if any(m["scored"] < m["expected"] for c in cells.values() for m in c["metrics"].values()):
         result["status"] = "partial"
     write_json(root / "quality.json", result)

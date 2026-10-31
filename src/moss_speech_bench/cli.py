@@ -7,6 +7,7 @@ import importlib.metadata
 import os
 import platform
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -25,9 +26,16 @@ def parser():
         choices=("infer", "report", "score", "all", "correctness", "correctness-report"),
         default="infer",
     )
-    p.add_argument("--mode", choices=("custom", "daily", "full"), default="custom")
+    p.add_argument("--mode", choices=("custom", "quick", "daily", "full"), default="custom")
     p.add_argument("--config", type=Path, help="Whole-dataset workload JSON")
     p.add_argument("--model")
+    p.add_argument("--samples-per-dataset", type=int, help="Quick only: 30..50, default 30")
+    p.add_argument("--subset-seed", type=int, help="Quick only: fixed selection seed, default 42")
+    p.add_argument(
+        "--time-budget",
+        type=float,
+        help="Seconds for this phase; quick defaults: infer 1500, score 300",
+    )
     p.add_argument("--correctness-config", type=Path)
     p.add_argument(
         "--checks",
@@ -89,11 +97,29 @@ async def run(args):
     if args.phase == "score":
         from .quality import score
 
-        quality = await asyncio.to_thread(score, args.output_dir, args.score_config)
+        quality = await asyncio.to_thread(
+            score, args.output_dir, args.score_config, args.time_budget
+        )
         report(args.output_dir, args.baseline, args.allow_difference)
         return {"quality": {"failed": quality["status"] != "complete"}}
     if args.phase == "report":
         return report(args.output_dir, args.baseline, args.allow_difference)
+    started = time.monotonic()
+    budget = (
+        args.time_budget if args.time_budget is not None else 1500 if args.mode == "quick" else None
+    )
+    if budget is not None and not 0 < budget < float("inf"):
+        raise ValueError("Time budget must be positive and finite")
+    if args.mode != "quick" and (
+        args.samples_per_dataset is not None or args.subset_seed is not None
+    ):
+        raise ValueError("Subset arguments are only supported in quick mode")
+
+    async def limited(coro):
+        if budget is None:
+            return await coro
+        return await asyncio.wait_for(coro, timeout=max(0, budget - (time.monotonic() - started)))
+
     if not args.config or not args.model:
         raise ValueError("infer requires --config and --model")
     url = urlsplit(args.base_url)
@@ -123,9 +149,16 @@ async def run(args):
         raise ValueError("Concurrency levels must be unique positive integers")
     if repeats <= 0 or not 0 < args.timeout < float("inf") or args.sample_rate <= 0:
         raise ValueError("Repeats, timeout and sample rate must be positive and finite")
-    if args.mode == "daily" and (len(levels) != 1 or repeats != 1):
+    if args.mode in ("quick", "daily") and (len(levels) != 1 or repeats != 1):
         raise ValueError("Daily uses exactly one concurrency and one formal repeat")
-    datasets, warmup, sampling = load_workload(args.config, args.model, args.stream, args.mode)
+    datasets, warmup, sampling = load_workload(
+        args.config,
+        args.model,
+        args.stream,
+        args.mode,
+        args.samples_per_dataset if args.samples_per_dataset is not None else 30,
+        args.subset_seed if args.subset_seed is not None else 42,
+    )
     if any(not re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in datasets):
         raise ValueError("Dataset IDs may contain only letters, digits, underscore and hyphen")
     cells = [
@@ -146,6 +179,8 @@ async def run(args):
     if args.dry_run:
         return {
             "scope": "performance_only",
+            "mode": args.mode,
+            "time_budget_s": budget,
             "cells": cells,
             "formal_requests": sum(c["expected"] for c in cells),
             "warmup_requests": len(warmup[0]) * len(cells) if warmup else 0,
@@ -172,6 +207,8 @@ async def run(args):
         "client_source_hash": identity["source_hash"],
         "metric_version": "omni-f96b10-moss-client-v1",
     }
+    if budget is not None:
+        contract["time_budget_s"] = budget
     root = args.output_dir
     if args.resume:
         manifest = read_json(root / "manifest.json")
@@ -231,14 +268,14 @@ async def run(args):
                 warm_client = ChatClient(
                     args.base_url, attempt / "warmup", sample_rate=args.sample_rate, api_key=key
                 )
-                warmed = await BenchmarkRunner(config).run(warmup[0], warm_client.send)
+                warmed = await limited(BenchmarkRunner(config).run(warmup[0], warm_client.send))
                 if any(not r.is_success for r in warmed):
                     raise ValueError("Warmup failed; formal cohort not started")
             client = ChatClient(
                 args.base_url, attempt / "outputs", sample_rate=args.sample_rate, api_key=key
             )
             runner = BenchmarkRunner(config)
-            await runner.run(datasets[cell["dataset"]][0], client.send)
+            await limited(runner.run(datasets[cell["dataset"]][0], client.send))
             result_hashes = {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((attempt / "outputs").glob("*.result.json"))
@@ -255,12 +292,19 @@ async def run(args):
             write_json(root / "manifest.json", manifest)
         manifest["state"] = "complete"
         manifest.pop("error", None)
+    except asyncio.TimeoutError:
+        manifest["state"] = "budget_exhausted"
+        manifest["error"] = "Inference time budget exhausted; partial results retained"
+        for cell in cells:
+            if cell["status"] == "running":
+                cell["status"] = "interrupted"
     except BaseException as exc:
         manifest["state"] = "interrupted"
         manifest["error"] = type(exc).__name__ + ": " + str(exc)
         raise
     finally:
         manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["infer_invocation_elapsed_s"] = time.monotonic() - started
         write_json(root / "manifest.json", manifest)
         result = report(root, args.baseline, args.allow_difference)
     return result

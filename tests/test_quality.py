@@ -28,7 +28,10 @@ async def test_offline_qa_and_report_resume(server, tmp_path):
     assert metric["value"] == 0 and metric["invalid"] == 1
     assert metric["statuses"]["generation_failed"] == 1
     assert result["status"] == "partial"
-    assert score(output) == result
+    repeated = score(output)
+    assert {k: v for k, v in repeated.items() if k != "elapsed_s"} == {
+        k: v for k, v in result.items() if k != "elapsed_s"
+    }
     report(output)
     assert read_json(output / "summary.json")["scored"] == 1
     assert (output / "performance.json").read_bytes() == performance

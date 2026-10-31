@@ -27,11 +27,12 @@ moss-speech-bench --config examples/custom.json --model moss-speech \
 
 ## 数据和模式
 
-配置格式见 [custom.json](examples/custom.json) 和 [daily.json](examples/daily.json)。输入文件路径相对于配置文件；示例 Daily 数据路径须替换成已获得的真实资产。程序不会下载缺失的本地数据，不提供截取前 N 条或随机抽样选项。
+配置格式见 [custom.json](examples/custom.json) 和 [daily.json](examples/daily.json)。输入文件路径相对于配置文件；示例 Daily 数据路径须替换成已获得的真实资产。程序不会下载缺失的本地数据。Daily/Full保持全量；Quick单独提供固定子集，不将其标为Daily完成。
 
 | 模式 | 数据 | 默认并发 / 重复 | 正式请求数 |
 |---|---|---|---:|
 | custom | 配置选择的数据全量 | C4 / 1 | 配置决定 |
+| quick | Daily四组，每组固定30条（可设30–50） | C4 / 1 | 120（可设至200） |
 | daily | Seed EN 1,088 + ZH 2,020 + StoryCloze 1,871 + LLaMA Questions 300 | C4 / 1 | 5,279 |
 | full（当前仅性能） | Seed EN、StoryCloze、LLaMA Questions | C1/C4/C8/C16 / 3 | 39,108 |
 
@@ -166,3 +167,32 @@ baseline比较还会核对评分器源码、模型资产hash、依赖版本、�
 本地测试验证评分协议、复用和归档行为；真实Whisper/Paraformer/WavLM/UTMOS权重及全量数据质量尚未验收。
 
 正确性入口、C00–C08固定选集、独立HF golden准入及Slurm配置见 [CORRECTNESS.md](CORRECTNESS.md)。
+
+## Quick：约30分钟的小测
+
+Quick沿用Daily四组数据：Seed EN、Seed ZH、StoryCloze、LLaMA Questions，默认每组30条，共120条，C4、单轮。使用同一份Daily配置与完整源数据清单，保留其中的采样参数和max_tokens。每组先验证原始总条数和全部ID唯一，再按`SHA256(dataset_id, subset_seed, sample_id)`排序固定选样，默认subset_seed=42。源文件行序变化不会改变选中ID；选样清单和population ID hash保存在manifest，选中请求完整保存在inputs。音频只读取选中的30条。
+
+```bash
+# 检查四组数据并打印120条请求规模，不发请求
+moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
+  --output-dir results/base-quick --dry-run
+
+# 向外层已启动的服务发请求；默认推理预算1500秒
+moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
+  --base-url http://127.0.0.1:8000 --deployment deployment.json \
+  --output-dir results/base-quick
+
+# 外层释放服务资源后，复用同一批输出离线评分；默认预算300秒
+moss-speech-bench --phase score --output-dir results/base-quick \
+  --score-config examples/scoring.json
+```
+
+`--samples-per-dataset 40`或`50`增加规模，`--subset-seed`显式更换固定选样；这两个参数仅适用于Quick。并发可调整，但保持一个并发配置和一轮。所有baseline对比必须匹配模式、选样ID/seed/hash、源数据版本、生成配置和预算。
+
+Quick的目标是推理25分钟＋评分5分钟。`--time-budget SECONDS`可分别覆盖当次infer或score预算；其他模式默认无限总预算，原有单请求timeout仍生效。预算每次显式调用重新计时，手动重试/恢复不属于原来的30分钟。
+
+推理从数据准备开始计时，在预热/请求阶段耗尽预算时取消客户端任务，保留部分产物、failed/not_attempted，状态budget_exhausted，未完成段吞吐N/A，退出码1。服务端的取消和资源释放仍由服务实现负责。
+
+评分预算在模型资产检查前开始、每个新样本前检查；已完成的评分缓存继续复用。预算耗尽的样本记budget_exhausted，单独保存该次尝试，保持完整分母和partial状态，退出码1。重新执行score只补齐未评分样本，旧预算占位记录保留，不自动重试已完成的评分失败。
+
+首次数据准备、正在执行的一条ASR/SIM/UTMOS调用、模型加载和磁盘收尾可能超出预算；服务启动/资源调度/手动等待也不计入这两段预算。因此30分钟是目标，尚未通过真实A800实测保证。输出条数、token上限及实时性能仍影响耗时。Quick只用于快速回归和探索；Daily/Full继续负责完整数据集结论，正确性套件仍独立执行。

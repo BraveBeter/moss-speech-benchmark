@@ -166,6 +166,7 @@ def report(directory, baseline=None, allow_difference=()):
         root / "summary.json",
         {
             "scope": manifest["scope"],
+            "mode": manifest["contract"]["mode"],
             "state": manifest["state"],
             "quality_status": "not_scored",
             **{
@@ -183,6 +184,8 @@ def report(directory, baseline=None, allow_difference=()):
     )
     lines = [
         "# MOSS-Speech performance",
+        "",
+        f"Mode: {manifest['contract']['mode']}; state: {manifest['state']}. Quick results are a fixed subset, not full Daily coverage.",
         "",
         "Quality: see offline quality section when scored. Model correctness: outside client scope.",
         "",

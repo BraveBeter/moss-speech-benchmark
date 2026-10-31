@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moss-speech-benchmark"
-version = "0.3.0"
+version = "0.4.0"
 description = "Standalone MOSS-Speech chat performance benchmark"
 requires-python = ">=3.10"
 license = "Apache-2.0"

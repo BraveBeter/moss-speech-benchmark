@@ -71,7 +71,7 @@ def _records(spec, root):
     raise ValueError(f"Unknown dataset kind: {kind}")
 
 
-def prepare_dataset(spec, root, *, model, stream, sampling):
+def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, subset_seed=42):
     task = spec["task"]
     if task not in TASKS or spec["language"] not in ("en", "zh"):
         raise ValueError("Invalid task or language")
@@ -84,6 +84,24 @@ def prepare_dataset(spec, root, *, model, stream, sampling):
         or len(records) != expected
     ):
         raise ValueError(f"{spec['id']}: expected {expected} rows, found {len(records)}")
+    selection = None
+    if subset_size is not None:
+        if not 0 < subset_size <= len(records):
+            raise ValueError("Subset exceeds source population")
+        ids = [str(r["id"]) for r in records]
+        if len(set(ids)) != len(ids) or any(not i for i in ids):
+            raise ValueError("Duplicate/empty sample id in source population")
+        records = sorted(records, key=lambda r: digest([spec["id"], subset_seed, str(r["id"])]))[
+            :subset_size
+        ]
+        selection = dict(
+            algorithm="sha256-id-v1",
+            seed=subset_seed,
+            size=subset_size,
+            ids=[str(r["id"]) for r in records],
+            population_expected=expected,
+            population_ids_hash=digest(sorted(ids)),
+        )
     prepared, seen = [], set()
     for row in records:
         sample_id = str(row["id"])
@@ -137,13 +155,15 @@ def prepare_dataset(spec, root, *, model, stream, sampling):
         k: spec.get(k) for k in ("id", "kind", "task", "language", "revision", "split", "expected")
     }
     metadata.update(samples_hash=digest(prepared), prompt_version=PROMPT_VERSION)
+    if selection:
+        metadata.update(expected=len(prepared), selection=selection)
     source = root / spec["source"]
     if source.is_file():
         metadata["source_file_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
     return prepared, metadata
 
 
-def load_workload(path, model, stream, mode):
+def load_workload(path, model, stream, mode, subset_size=30, subset_seed=42):
     path = Path(path).resolve()
     config = read_json(path)
     sampling = config.get("sampling", {})
@@ -154,9 +174,11 @@ def load_workload(path, model, stream, mode):
     ids = [s["id"] for s in specs]
     if not specs or len(set(ids)) != len(ids):
         raise ValueError("Dataset IDs must be nonempty and unique")
-    if mode in ("daily", "full"):
-        expected_ids = set(DAILY) if mode == "daily" else set(PERFORMANCE)
-        allowed_ids = [expected_ids] if mode == "daily" else [expected_ids, set(DAILY)]
+    if mode == "quick" and not 30 <= subset_size <= 50:
+        raise ValueError("Quick sample size must be 30..50 per dataset")
+    if mode in ("quick", "daily", "full"):
+        expected_ids = set(DAILY) if mode in ("quick", "daily") else set(PERFORMANCE)
+        allowed_ids = [expected_ids] if mode in ("quick", "daily") else [expected_ids, set(DAILY)]
         if set(ids) not in allowed_ids or any(s["expected"] != DAILY[s["id"]] for s in specs):
             raise ValueError(
                 "Daily requires 5279 rows; Full requires all three performance datasets"
@@ -179,6 +201,8 @@ def load_workload(path, model, stream, mode):
             model=model,
             stream=stream,
             sampling=sampling,
+            subset_size=subset_size if mode == "quick" else None,
+            subset_seed=subset_seed,
         )
     warmup = None
     if config.get("warmup"):
