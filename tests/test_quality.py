@@ -189,3 +189,52 @@ async def test_installed_offline_score_entrypoint(server, tmp_path):
     assert process.returncode == 0, error.decode()
     assert quality_report(output)["status"] == "complete"
     assert len(state["payloads"]) == 1
+
+
+async def test_qwen_ci_multipart_parallel_and_transcript_cache(tmp_path):
+    import asyncio
+
+    from aiohttp import web
+    from moss_speech_bench.asr import transcribe_many
+
+    state = dict(active=0, peak=0, calls=0)
+
+    async def handler(request):
+        fields = await request.post()
+        assert fields["model"] == "qwen" and fields["language"] in ("en", "zh")
+        assert fields["response_format"] == "json" and fields["file"].file.read()
+        assert "temperature" not in fields
+        state["calls"] += 1
+        state["active"] += 1
+        state["peak"] = max(state["peak"], state["active"])
+        try:
+            await asyncio.sleep(0.02)
+            return web.json_response(dict(text="hello"))
+        finally:
+            state["active"] -= 1
+
+    app = web.Application()
+    app.router.add_post("/v1/audio/transcriptions", handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    try:
+        spec = dict(
+            backend="qwen3-asr",
+            base_url="http://127.0.0.1:" + str(site._server.sockets[0].getsockname()[1]),
+            model="qwen",
+            concurrency=4,
+        )
+        items = []
+        for i in range(8):
+            path = tmp_path / (str(i) + ".wav")
+            path.write_bytes(bytes([i + 1]))
+            items.append((path, "en" if i % 2 else "zh", spec))
+        first = await transcribe_many(items, tmp_path / "cache")
+        assert len(first) == 8 and all(v["text"] == "hello" for v in first.values())
+        assert state["calls"] == 8 and state["peak"] == 4
+        assert await transcribe_many(items, tmp_path / "cache") == first
+        assert state["calls"] == 8
+    finally:
+        await runner.cleanup()

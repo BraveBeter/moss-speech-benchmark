@@ -1,6 +1,7 @@
 """Offline scoring of frozen inference artifacts; no generation requests."""
 
 import ast
+import asyncio
 import importlib.metadata
 import math
 import re
@@ -39,6 +40,7 @@ class LocalScorers:
 
     def __init__(self, config):
         self.config, self.models = config, {}
+        self.transcripts = {}
 
     def model(self, key):
         if key in self.models:
@@ -72,6 +74,14 @@ class LocalScorers:
         return model
 
     def transcribe(self, path, lang):
+        spec = self.config.get("asr_" + lang, {})
+        if spec.get("backend") == "qwen3-asr":
+            from .asr import transcription_key
+
+            result = self.transcripts[transcription_key(path, lang, spec)]
+            if result["status"] != "scored":
+                raise RuntimeError("Qwen3-ASR: " + str(result))
+            return result["text"]
         model = self.model("asr_" + lang)
         if lang == "en":
             return model.transcribe(str(path), language="en", fp16=False)["text"]
@@ -306,6 +316,29 @@ def score(directory, config_path=None, time_budget=None):
     known = {c["id"] for c in manifest["cells"]}
     if not selection or len(set(selection)) != len(selection) or not set(selection) <= known:
         raise ValueError("Scoring cells must be nonempty, unique existing cell IDs")
+    asr_items = []
+    for cell in manifest["cells"]:
+        if cell["id"] not in selection:
+            continue
+        rows, _ = collect_cell(root, cell)
+        for row in rows:
+            spec = config.get("asr_" + row["language"], {})
+            if spec.get("backend") == "qwen3-asr" and row["is_success"] and row.get("wav_path"):
+                asr_items.append(
+                    (
+                        root / cell["attempts"][-1] / "outputs" / row["wav_path"],
+                        row["language"],
+                        spec,
+                    )
+                )
+    if asr_items:
+        from .asr import transcribe_many
+
+        backend.transcripts = asyncio.run(
+            transcribe_many(
+                asr_items, root / "quality" / "asr", started + budget if budget else None
+            )
+        )
     cells = {}
     for cell in manifest["cells"]:
         if cell["id"] not in selection:

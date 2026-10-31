@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
+import soundfile as sf
 import torch
 import torchaudio
 SAMPLE_RATE = 16000
@@ -18,7 +19,8 @@ class UTMOSScorer:
         """
         scores: list[float] = []
         for path in wav_paths:
-            wave, sr = torchaudio.load(path)
+            audio, sr = sf.read(path, dtype="float32", always_2d=True)
+            wave = torch.from_numpy(audio.T.copy())
             if wave.shape[0] > 1:
                 wave = wave.mean(dim=0, keepdim=True)
             if sr != SAMPLE_RATE:

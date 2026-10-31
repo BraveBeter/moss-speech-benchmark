@@ -46,3 +46,5 @@ the target's tests and fixtures remain in its own checkout. The HTTP case
 protocol and assertions follow eager-base `tests/test_model/test_moss_speech_ci.py`
 and archived strict-C2 behavior, implemented using the standalone ChatClient
 without importing service-management fixtures.
+
+Qwen ASR scoring follows the current official `benchmarks/tasks/asr.py` multipart fields and default fan-out 32, verified on 2026-10-31. New async orchestration adds transcript identity/hash caching without importing model-serving code. UTMOS WAV decoding uses soundfile float32, matching the upstream audio fallback; the 16kHz torchaudio resampling, PCM16 conversion and prediction remain unchanged.

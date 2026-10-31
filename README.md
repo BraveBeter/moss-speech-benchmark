@@ -196,3 +196,5 @@ Quick的目标是推理25分钟＋评分5分钟。`--time-budget SECONDS`可分�
 评分预算在模型资产检查前开始、每个新样本前检查；已完成的评分缓存继续复用。预算耗尽的样本记budget_exhausted，单独保存该次尝试，保持完整分母和partial状态，退出码1。重新执行score只补齐未评分样本，旧预算占位记录保留，不自动重试已完成的评分失败。
 
 首次数据准备、正在执行的一条ASR/SIM/UTMOS调用、模型加载和磁盘收尾可能超出预算；服务启动/资源调度/手动等待也不计入这两段预算。因此30分钟是目标，尚未通过真实A800实测保证。输出条数、token上限及实时性能仍影响耗时。Quick只用于快速回归和探索；Daily/Full继续负责完整数据集结论，正确性套件仍独立执行。
+
+评分可采用SGLang-Omni CI同源的Qwen3-ASR HTTP流程：asr_en/asr_zh配置backend=qwen3-asr、base_url、model及concurrency（默认32）。客户端并发上传已保存WAV，使用model/language/response_format字段和服务端greedy默认值，缓存完整转录后再离线评分；不重新向MOSS发请求。英文归一化仍复用CI的EnglishTextNormalizer，此处使用其文本规则，不加载Whisper模型。UTMOS的WAV读取使用上游同样支持的soundfile float32方式，避免缺失TorchCodec导致评分失败，重采样和预测算法保持。

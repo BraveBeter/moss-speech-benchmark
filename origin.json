@@ -79,13 +79,13 @@
         "source": "benchmarks/metrics/utmos.py",
         "target": "utmos_scoring.py",
         "source_sha256": "8cbd6d36f0b83c9e58092348a029b75b0c5d62060003faea49bb0ae2e795af9a",
-        "vendored_sha256": "4937158cd8f33b700fba156de675d3b15208ed6dd82b6107543c43a089803b25",
+        "vendored_sha256": "4c9293d2a5cef8b51c4fc7b05827581a2a06c190abd2da158259a4a00b9361ec",
         "selected_symbols": [
           "UTMOSScorer"
         ]
       }
     ],
-    "changes": "Select pure ASR scoring functions; UTMOS local model-path constructor; remaining algorithms unchanged."
+    "changes": "Select pure ASR scoring functions; UTMOS local model-path constructor; remaining algorithms unchanged. UTMOS decodes saved PCM WAVs through soundfile float32 (same upstream audio fallback), preserving resampling/PCM16/prediction."
   },
   "correctness_sources": {
     "eager_base": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
@@ -116,5 +116,15 @@
       }
     ],
     "changes": "Explicit core/model/audio/profile paths; retain independent golden and all original numerical checks. CPU/CUDA tests stay in target source."
+  },
+  "qwen_asr_protocol": {
+    "source": "https://github.com/sgl-project/sglang-omni/blob/main/benchmarks/tasks/asr.py",
+    "consulted": "2026-10-31",
+    "functions": [
+      "_transcribe_qwen3_asr",
+      "make_asr_send_fn"
+    ],
+    "model": "Qwen/Qwen3-ASR-1.7B",
+    "concurrency": 32
   }
 }
