@@ -1,110 +1,63 @@
-# MOSS-Speech TTS and spoken-QA protocols
+# MOSS-Speech evaluation protocols
 
-Quality comparisons require the same input IDs, weights, voice, decoding profile,
-sampling, budgets and scorer identity. Preserve the original run and score;
-protocol changes create a new baseline. A completed score is not a quality pass.
+## Current suite: moss-spoken-qa-v2
 
-## Text to speech
+Quick, Daily and Full begin with the existing C00–C08 correctness suite.
+Inference is blocked unless all nine gates pass. Correctness artifacts and hashes
+are bound to the run; offline scoring and report regeneration validate them.
+The fixed eager-base profile is not certification for arbitrary optimizations.
 
-The default `moss-chat-v1` asks a dialogue model to read text, followed by its
-checkpoint default system turn. This is an instruction-following engineering test.
-It is not the paper's isolated speech-decoder evaluation or SeedTTS voice cloning.
+End-to-end datasets are exclusively OpenAudioBench LLaMA Questions (300),
+TriviaQA (1000) and WebQuestions (1000). Default tasks are both S2T and S2S.
+Daily uses all 2300 questions, 4600 requests. Full scans the same complete data
+at C1/C4/C8/C16, three repeats by default. Each dataset/task has a separate cell;
+quality normally selects C4/r1 instead of rescoring every performance repeat.
 
-A dataset may explicitly declare a versioned prompt:
+Quick selects 20 fixed questions per dataset by source ID hash and seed42,
+then evaluates each in both modalities: 60 questions, 120 requests.
+The same source questions/audio must be used in S2T and S2S. Source manifests,
+IDs, revisions, actual prompts, sampling and output hashes remain reproducible.
+20–50 questions per dataset are configurable; a larger cohort needs a new
+baseline and a fresh check of the 40-minute target.
 
-```json
-"prompt": {
-  "name": "tts-read-system-zh-v1",
-  "system": "只用中文逐字朗读用户原文，不回答问题，不翻译，不添加解释。",
-  "template": "{text}"
-}
-```
+The default `spoken-qa-short-en-v1` system prompt asks for a short English answer
+phrase without explanations. It contains no gold answer. Overrides are explicit
+and versioned in the input contract. Do not silently truncate generated answers,
+change max_tokens, or remove difficult examples to improve runtime or scores.
 
-`template` must contain exactly one `{text}` field. `system` is a separate first
-message. The default is unchanged when `prompt` is absent. The unmodified target
-remains `expected`; prompt content/hash and actual request hashes are recorded.
-Never strip a reply, translate its transcript back, or replace the reference to
-improve WER/CER. Before accepting a protocol, examine a fixed bilingual challenge
-set containing questions, instructions, numbers and normal declarative sentences.
-Report language/task violations and empty/truncated output alongside error rates.
-For ASR diagnosis, `asr_en/asr_zh.language_hint: "auto"` omits the language hint;
-this is an explicitly different scorer identity. The normal default still sends
-the declared sample language. Preserve both transcripts and their settings.
+S2T uses normalized whole-answer exact match, retained as `accuracy` for format
+compatibility. S2S transcribes saved audio with concurrent Qwen3-ASR, then applies
+the same matching; UTMOS evaluates acoustic quality independently.
+This EM is an engineering regression metric, not semantic QA accuracy or an
+exact reproduction of a paper's evaluator. The optional `answer_mention` is only
+a diagnostic: even an incorrect or negated answer may contain a valid alias.
+Any semantic answer extractor/judge requires its own versioned protocol and
+validation before formal adoption. Empty, failed, timed-out and truncated cases
+remain in coverage and in the expected denominator.
 
-Use corpus edits/reference length as the primary WER/CER, per-sample values as
-diagnostics. Insertions can make a sample exceed 100%. Compare the recognizer's
-transcript with the audio and another recognizer/manual review for outliers.
-SIM uses the configured service voice; per-sample clone SIM needs actual cloning
-support. Neither instruction compliance nor a low WER alone proves model parity.
+## Deferred isolated Codec Decoder
 
-## Speech to speech
+Seed-TTS-Eval EN1088 and ZH2020 are reserved exclusively for an isolated Decoder
+protocol in this project. Full records the planned 3108 samples as `deferred`.
+No Decoder endpoint, tensor-input contract, or reference generation recipe is
+currently implemented. Do not substitute chat-based TTS, end-to-end QA, or
+correctness tensors for this quality evaluation. No fake HTTP request or score
+is generated; the overall Full suite remains incomplete and exits 1.
+WER/CER, speaker similarity and DNSMOS remain future Decoder metrics,
+not correctness gates or end-to-end QA scores. Implementation is optional future
+work, not a prerequisite for running the supported end-to-end portion.
 
-Keep natural dialogue QA and constrained short-answer QA as separate named
-protocols. Speech inputs may declare `prompt.system`; they do not accept a text
-`template`. A generic short-answer system instruction must not contain the gold
-answer, and input audio, aliases and ASR outputs must remain available.
+## Historical diagnosis
 
-The existing `accuracy` field remains normalized whole-answer exact match (EM).
-A correct explanation can fail EM. Do not present this value as semantic QA
-accuracy. An optional scoring flag `qa_answer_mention: true` adds `answer_mention`,
-using normalized token-boundary aliases. This is a diagnostic only: a negated or
-otherwise incorrect sentence can mention an answer. It never replaces EM.
+The previous four-set Quick, Seed chat-reading prompts, StoryCloze and their
+reports remain historical evidence. They do not become Decoder measurements
+when the current suite changes. Old reports can still be reconstructed offline;
+new named modes reject the old workload composition. New `kind=seedtts` chat
+runs are rejected. Generic custom requests remain explicit diagnostic work.
 
-Semantic QA requires a separately versioned official evaluator or explicit answer
-extractor/judge with its own validation and failure coverage. Do not introduce a
-permissive substring metric and call it accuracy. UTMOS measures acoustic quality,
-not answer correctness. Preserve refusal, empty, timeout and length-limited cases.
-
-## HF comparison
-
-Run `providers/hf_http.py` only in an isolated, explicitly selected HF environment
-inside Slurm, then connect with the normal `infer --mode custom --no-stream` CLI.
-The provider uses the original checkpoint's AutoProcessor, model.generate and
-processor.decode; it imports no SGLang implementation. It records source hashes,
-input grids, generated grids and generation configuration. It supports buffered
-WAV output only and is a diagnosis tool, not a production serving backend.
-
-Compare exact prompt/sampling inputs first, then change one prompt condition at a
-time. Use the same full-decoder profile for waveform comparisons. Streaming and
-buffered decoders, different precision/kernels and different attention libraries
-can have different waveforms; behavioral ASR agreement is not tensor parity.
-Use the independent `correctness` phase for numerical/greedy gates. Do not call
-similar quality scores proof of correct adaptation or tuned prompts model fixes.
-
-The pinned checkpoint advertises Transformers 4.57.0.dev0; stable 4.57.1 removed
-an argument required by its original generation method. An isolated 4.56.2
-reference runtime restores that generation interface without editing checkpoint
-source. Where TorchAudio requires unavailable TorchCodec, `--pcm16-reader` uses
-an explicit, PCM16-only WAV reader with exact int16/32768 normalization. This
-replaces only private-process file I/O, is recorded in lineage, and must not be
-represented as an unmodified dependency environment. Model/processor/generation/
-codec computation and checkpoint source remain unchanged.
-
-The diagnostic greedy configuration explicitly sets `min_new_tokens=0`, as the
-original generation loop compares this field as an integer. This adds no forced
-minimum output and matches the eager request’s unrestricted minimum.
-
-The HF adapter uses `model.config.modality_pad_token_id` for audio masking, while EOS uses tokenizer end tokens. Substituting the
-tokenizer padding ID for the modality pad would stop audio after its first code.
-Failed adapter attempts are retained as tool failures, not model-quality evidence.
-
-## Candidate configuration
-
-`examples/daily-protocol-candidate.json` preserves the Daily datasets, counts and
-sampling while explicitly selecting system-first read/short-answer prompts.
-Fill its data paths and immutable revisions as for `daily.json`. It is a protocol
-candidate, not a claim that all 5,279 cases have passed. Use a new output directory
-and compare against a baseline generated with that same protocol. The original
-`daily.json` and its default prompts are retained for reproducibility.
-
-For speech QA, enable `qa_answer_mention` in a copy of the scoring config only
-when the additional diagnostic is wanted; whole-answer EM remains mandatory.
-A future semantic QA evaluator must preserve its model/prompt version, per-case
-judgment and validation against manually labeled answers before formal adoption.
-
-The paired diagnosis found a same-WAV disagreement: forcing Chinese produced a
-Chinese paraphrase while auto detection produced an English translation. This
-requires independent ASR or listening review; never choose the lower error rate.
-`examples/scoring-protocol-candidate.json` explicitly selects auto language and
-adds answer mention diagnostics. The original fixed-language scoring example
-is unchanged. Neither candidate has passed the full Daily workload.
+The isolated `providers/hf_http.py` and explicit prompt/ASR language diagnostics
+are retained. They compare original HF model behavior with eager serving and
+record reference source, modality pad, generation conditions and PCM decoding.
+They do not implement the deferred Decoder benchmark. The full independent
+numerical and service checks remain in the correctness suite described in
+[CORRECTNESS.md](CORRECTNESS.md).

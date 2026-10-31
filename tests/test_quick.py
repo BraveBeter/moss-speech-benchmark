@@ -4,7 +4,7 @@ import pytest
 from test_runner import args, workload
 
 from moss_speech_bench.cli import run
-from moss_speech_bench.datasets import DAILY, load_workload
+from moss_speech_bench.datasets import QA_DATASETS, load_workload
 from moss_speech_bench.quality import quality_report, score
 from moss_speech_bench.reporting import report
 from moss_speech_bench.storage import read_json, write_json
@@ -13,7 +13,7 @@ from moss_speech_bench.storage import read_json, write_json
 def daily_workload(root):
     (root / "input.wav").write_bytes(b"fixture")
     specs = []
-    for name, count in DAILY.items():
+    for name, count in QA_DATASETS.items():
         rows = [
             dict(id=str(i), text=f"input {i}", expected="A", audio="input.wav")
             for i in range(count)
@@ -24,12 +24,7 @@ def daily_workload(root):
                 id=name,
                 kind="json",
                 source=name + ".json",
-                task="s2s"
-                if name == "llama_questions"
-                else "t2t"
-                if name == "storycloze"
-                else "t2s",
-                language="zh" if name == "seed_zh" else "en",
+                language="en",
                 expected=count,
             )
         )
@@ -41,20 +36,26 @@ def daily_workload(root):
 def test_fixed_selection_and_only_selected_audio_read(tmp_path):
     config = daily_workload(tmp_path)
     original, _, _ = load_workload(config, "test", True, "quick")
-    assert all(len(rows) == 30 for rows, _ in original.values())
+    assert all(len(rows) == 20 for rows, _ in original.values())
+    for name in QA_DATASETS:
+        text, audio = original[name + "-s2t"], original[name + "-s2s"]
+        assert text[1]["selection"] == audio[1]["selection"]
+        assert text[0][0]["payload"]["modalities"] == ["text"]
+        assert audio[0][0]["payload"]["modalities"] == ["audio"]
+        assert text[0][0]["payload"]["messages"] == audio[0][0]["payload"]["messages"]
     path = tmp_path / "llama_questions.json"
     rows = read_json(path)
-    selected = set(original["llama_questions"][1]["selection"]["ids"])
+    selected = set(original["llama_questions-s2s"][1]["selection"]["ids"])
     for row in rows:
         if row["id"] not in selected:
             row["audio"] = "missing.wav"
     write_json(path, list(reversed(rows)))
     reordered, _, _ = load_workload(config, "test", True, "quick")
-    assert original["llama_questions"][0] == reordered["llama_questions"][0]
+    assert original["llama_questions-s2s"][0] == reordered["llama_questions-s2s"][0]
     with pytest.raises(FileNotFoundError):
         load_workload(config, "test", True, "daily")
-    for size in (29, 51):
-        with pytest.raises(ValueError, match="30..50"):
+    for size in (19, 51):
+        with pytest.raises(ValueError, match="20..50"):
             load_workload(config, "test", True, "quick", size)
     # Full population IDs, including unselected rows, must remain unique.
     rows[-1]["id"] = rows[0]["id"]
@@ -63,24 +64,29 @@ def test_fixed_selection_and_only_selected_audio_read(tmp_path):
         load_workload(config, "test", True, "quick")
 
 
-async def test_quick_inference_cohort_and_resume_contract(server, tmp_path):
+async def test_quick_inference_cohort_and_resume_contract(server, tmp_path, correctness_stub):
     url, state = server
     config = daily_workload(tmp_path)
     dry = await run(args(config, url, tmp_path / "unused", "--mode", "quick", "--dry-run"))
-    assert dry["formal_requests"] == 120 and dry["time_budget_s"] == 1500
-    a = args(config, url, tmp_path / "quick", "--mode", "quick")
+    assert dry["formal_requests"] == 120 and dry["time_budget_s"] == 2040
+    correctness_stub["url"] = url
+    a = args(
+        config, url, tmp_path / "quick", "--mode", "quick", "--correctness-config", "fixture.json"
+    )
     metrics = await run(a)
     assert len(state["payloads"]) == 120 and state["peak"] == 4
-    assert all(m["expected"] == m["succeeded"] == 30 for m in metrics.values())
+    assert all(m["expected"] == m["succeeded"] == 20 for m in metrics.values())
     manifest = read_json(a.output_dir / "manifest.json")
     for name, metadata in manifest["contract"]["datasets"].items():
-        assert metadata["selection"]["population_expected"] == DAILY[name]
-        assert len(metadata["selection"]["ids"]) == 30
+        assert (
+            metadata["selection"]["population_expected"] == QA_DATASETS[metadata["source_dataset"]]
+        )
+        assert len(metadata["selection"]["ids"]) == 20
     assert "Mode: quick" in (a.output_dir / "summary.md").read_text()
     a.resume = True
     await run(a)
     assert len(state["payloads"]) == 120
-    assert score(a.output_dir)["time_budget_s"] == 300
+    assert score(a.output_dir)["time_budget_s"] == 180
     a.subset_seed = 99
     with pytest.raises(ValueError, match="contract mismatch"):
         await run(a)
@@ -96,7 +102,7 @@ async def test_quick_inference_cohort_and_resume_contract(server, tmp_path):
             "--dry-run",
         )
     )
-    assert bigger["formal_requests"] == 200
+    assert bigger["formal_requests"] == 300
     with pytest.raises(ValueError, match="only supported"):
         await run(args(config, url, tmp_path / "unused", "--samples-per-dataset", "30"))
     with pytest.raises(ValueError, match="exactly one"):
@@ -177,5 +183,69 @@ async def test_installed_quick_dry_run(tmp_path):
     assert process.returncode == 0, error.decode()
     data = json.loads(output)
     assert data["mode"] == "quick" and data["formal_requests"] == 120
-    assert data["time_budget_s"] == 1500 and len(data["cells"]) == 4
+    assert data["time_budget_s"] == 2040 and len(data["cells"]) == 6
     assert not (tmp_path / "unused").exists()
+
+
+async def test_named_gate_blocks_http_and_proof_is_required(server, tmp_path, correctness_stub):
+    url, state = server
+    config = daily_workload(tmp_path)
+    correctness_stub.update(url=url, status="fail")
+    a = args(
+        config, url, tmp_path / "blocked", "--mode", "quick", "--correctness-config", "fixture.json"
+    )
+    assert (await run(a))["correctness"]["failed"]
+    assert not state["payloads"] and not (a.output_dir / "manifest.json").exists()
+    correctness_stub["status"] = "pass"
+    a.output_dir = tmp_path / "passed"
+    await run(a)
+    assert len(state["payloads"]) == 120
+    saved = read_json(a.output_dir / "summary.json")
+    assert saved["correctness_status"] == "pass"
+    (a.output_dir / "correctness/correctness.json").write_text("{}")
+    with pytest.raises(ValueError, match="proof hash"):
+        score(a.output_dir)
+    with pytest.raises(ValueError, match="correctness-config"):
+        await run(args(config, url, tmp_path / "missing", "--mode", "quick"))
+
+
+async def test_task_selection_and_quickly_alias(tmp_path):
+    config = daily_workload(tmp_path)
+    selected = await run(
+        args(
+            config,
+            "http://127.0.0.1:1",
+            tmp_path / "unused",
+            "--mode",
+            "quickly",
+            "--tasks",
+            "s2s",
+            "--dry-run",
+        )
+    )
+    assert selected["mode"] == "quick" and selected["formal_requests"] == 60
+    for bad in ["s2s,s2s", "t2s", ""]:
+        with pytest.raises(ValueError, match="tasks"):
+            await run(
+                args(
+                    config,
+                    "http://127.0.0.1:1",
+                    tmp_path / "unused",
+                    "--mode",
+                    "quick",
+                    "--tasks",
+                    bad,
+                    "--dry-run",
+                )
+            )
+
+
+@pytest.mark.parametrize("mode", ["daily", "full"])
+async def test_full_and_daily_cannot_bypass_correctness(server, tmp_path, correctness_stub, mode):
+    url, state = server
+    config = daily_workload(tmp_path)
+    correctness_stub.update(url=url, status="fail")
+    result = await run(
+        args(config, url, tmp_path / mode, "--mode", mode, "--correctness-config", "fixture.json")
+    )
+    assert result["correctness"]["failed"] and not state["payloads"]

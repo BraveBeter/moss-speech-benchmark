@@ -36,15 +36,9 @@ def test_storycloze_and_speech_input_mapping(tmp_path):
     assert rows[0]["expected"] == "Paris"
 
 
-def test_seedtts_reads_target_and_rejects_bad_lines(tmp_path):
-    meta = tmp_path / "meta.lst"
-    meta.write_text("s1|reference text|ref.wav|target text\n")
-    rows, _ = prepare(tmp_path, "seedtts", "meta.lst", "t2s")
-    assert rows[0]["expected"] == "target text"
-    assert rows[0]["payload"]["messages"][0]["content"].endswith("target text")
-    assert "ref.wav" not in str(rows[0]["payload"])
-    meta.write_text("s1|bad\n")
-    with pytest.raises(ValueError, match="Malformed"):
+def test_seedtts_does_not_fall_back_to_chat(tmp_path):
+    (tmp_path / "meta.lst").write_text("s1|reference text|ref.wav|target text\n")
+    with pytest.raises(ValueError, match="Codec Decoder"):
         prepare(tmp_path, "seedtts", "meta.lst", "t2s")
 
 

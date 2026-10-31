@@ -1,123 +1,113 @@
 # MOSS-Speech benchmark client
 
-独立客户端，连接已启动的 SGLang-Omni `/v1/chat/completions` 服务。
-支持性能测试与基于已保存输出的离线质量评分。正确性与精度对齐通过独立correctness阶段和隔离provider运行，见[CORRECTNESS.md](CORRECTNESS.md)。
+独立客户端，连接外层已启动的 SGLang-Omni 服务。常规运行统一按 **Correctness → Inference/Performance → Offline Quality → Report** 执行；正式推理输出保存一次，评分不重发生成请求。客户端不下载模型、不管理服务或申请 GPU。
 
-复用用户指定 `tts-serving-benchmark` 中提取的 SGLang-Omni runner、SeedTTS loader、性能和播放连续性算法；新增 MOSS chat/SSE 适配与实验记录。来源和修改见 [ORIGIN.md](ORIGIN.md)。客户端不依赖 Torch/CUDA，不管理服务进程。
+## 测试范围
 
-## 安装与首次运行
+| 模式 | 端到端数据 | 默认任务/请求 | Codec Decoder |
+|---|---|---|---|
+| Quick / Quickly | 三集各固定20个问题，可设20–50 | 同一问题各跑S2T、S2S，C4/一轮，共120请求 | 不运行 |
+| Daily | LLaMA Questions 300、TriviaQA 1000、WebQuestions 1000，全量2300问题 | S2T+S2S，C4/一轮，共4600请求 | 不运行 |
+| Full | 同上三个完整集合 | S2T+S2S，C1/C4/C8/C16、三轮，默认55200性能请求；评分选每个数据集/任务的一个测量段 | Seed-TTS-Eval EN1088+ZH2020，**deferred，未实现** |
+
+Full 的 Decoder 流程尚未确定：只登记目标集合和暂缓原因，不加载 Seed 数据、不发送聊天请求代替 Codec 测试，也不声称整个 Full 通过。端到端部分正常执行，报告 `suite_status=incomplete`，实际执行退出码1；dry-run只展示计划，退出码0。
+
+Seed-TTS-Eval仅预留给隔离的Codec Decoder评估。当前拒绝 `kind=seedtts` 的新聊天运行。StoryCloze及其他AR/Encoder数据不属于当前三个常规模式。旧数据集loader/protocol和原WER/CER结果的历史来源保留在Git及旧报告中，不将旧高错误率作为标准Decoder质量结论。
+
+`--tasks s2s`或`--tasks s2t`可显式只测一条路径，默认两者。`--mode quickly`是`quick`别名，归档统一写quick。`custom`保留为显式开发/协议诊断入口，不代替常规模式验收。
+
+## 安装与数据
 
 Python 3.10+：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -e '.[dev]'
-
-# 只检查数据与运行规模，不请求服务
-moss-speech-bench --config examples/custom.json --model moss-speech \
-  --output-dir results/smoke --dry-run
-
-# 服务需由外层启动；示例两条数据仅用于接入检查
-moss-speech-bench --config examples/custom.json --model moss-speech \
-  --base-url http://127.0.0.1:8000 --concurrency 1 --output-dir results/smoke
+# 在独立评分环境中，同时安装客户端基础依赖和所需可选依赖
+pip install -e '.[quality,utmos]'
 ```
 
-`python -m moss_speech_bench` 与命令行入口等价。`--base-url` 只接受协议、主机与端口，不附加 `/v1`。认证用 `--api-key-env VARIABLE_NAME`；密钥不写入产物。
+配置参考 [daily.json](examples/daily.json)，三种模式共享这份配置。替换本地CSV/audio_root和固定Dataset Revision。CSV支持OpenAudioBench原始 `audio_filename` 与 `Answer`、`answers`或`answer_normalized_aliases`；本地JSON列表也可用于开发。数量校验不等于官方版本校验，必须保留来源revision和文件hash。
 
-## 数据和模式
+Quick从三个完整CSV清单选样，先核验300/1000/1000总数与全部ID唯一，再按 `SHA256(dataset_id, subset_seed, sample_id)` 固定选20个，默认seed42。只读选中音频；S2T/S2S共享同一组ID及原音频字节，分别保存各自payload/hash。改变行序不改变子集；换子集、任务、提示词、预算须建立新baseline。
 
-配置格式见 [custom.json](examples/custom.json) 和 [daily.json](examples/daily.json)。输入文件路径相对于配置文件；示例 Daily 数据路径须替换成已获得的真实资产。程序不会下载缺失的本地数据。Daily/Full保持全量；Quick单独提供固定子集，不将其标为Daily完成。
+数据源及公开规模见[固定OpenAudioBench版本](https://huggingface.co/datasets/baichuan-inc/OpenAudioBench/blob/98f8fa0d5fa7e530ec8e6f097b55f10b003d111b/README.md)。不在CLI中隐式下载数据或修改数据。
 
-| 模式 | 数据 | 默认并发 / 重复 | 正式请求数 |
-|---|---|---|---:|
-| custom | 配置选择的数据全量 | C4 / 1 | 配置决定 |
-| quick | Daily四组，每组固定30条（可设30–50） | C4 / 1 | 120（可设至200） |
-| daily | Seed EN 1,088 + ZH 2,020 + StoryCloze 1,871 + LLaMA Questions 300 | C4 / 1 | 5,279 |
-| full（当前仅性能） | Seed EN、StoryCloze、LLaMA Questions | C1/C4/C8/C16 / 3 | 39,108 |
+## 正确性先行
 
-Daily 校验四组输入的 ID、模态、语言和条数；Full 只要求并调度三个性能集，也接受同一份 Daily 配置（不加载未调度的 ZH 数据）。`--repeats`、`--concurrencies` 可修改 Full 策略。Daily 限定一个并发、一次正式推理。条数校验不能证明数据是官方原版；必须同时核对 revision、split 和输入 hash。自定义的同名数据不可冒称官方集。
+Quick、Daily、Full的真实infer都必须提供 [correctness.json](examples/correctness.json) 的本机配置。固定C00–C08全部通过后，才发送任何正式性能请求；失败/缺项/unsupported停止后续推理，不能用 `--checks` 绕过。正确性配置的服务地址必须与受测地址一致。
 
-支持的读取方式：
+详细覆盖、独立HF golden与Slurm环境见[CORRECTNESS.md](CORRECTNESS.md)。所有模型测试和fixture仍在目标仓库；客户端通过隔离provider调用，不导入模型计算代码。当前正确性profile限定固定eager base，不能拿它直接认证其他模型配置。
 
-- `seedtts`：Seed-TTS `meta.lst` 或固定 40 位 commit revision 的 HF 数据集（额外安装 `.[hf]`）。复用原 loader。目标文本前加固定逐字朗读指令；当前使用服务固定音色，不传逐样本参考语音。未来 SIM 必须使用实际音色参考，不能声称标准 voice-clone 协议。
-- `storycloze`：2016 test CSV，四句故事 + A/B 结局。标准列 `InputStoryid`、`InputSentence1..4`、`RandomFifthSentenceQuiz1/2`、`AnswerRightEnding`。保存 A/B 标签；属于纯文本工程协议。
-- `openaudio`：CSV 的 `audio_filename` 与 `answer_normalized_aliases`（也接受 `Answer` / `answers`）及 `audio_root`。音频在正式计时前读入并编码；保留答案供后续评分。
-- `json`：列表，每条含唯一 `id`，文本输入用 `text`，语音输入用 `audio` 文件路径；可提供 `expected`。支持 `t2t/t2s/s2t/s2s` 和 `en/zh`。
+可以由外层在启动服务前，通过同一运行目录的`correctness/`执行C00–C06；服务就绪后，infer会校验其源码/资产/配置身份，完成C07/C08。只复用同目录内且身份、产物hash有效的已通过gate，失败不自动重试。独立完整运行也保留：
 
 ```bash
-moss-speech-bench --mode daily --config examples/daily.json --model moss-speech \
-  --base-url http://127.0.0.1:8000 --deployment deployment.json \
-  --output-dir results/base-daily
+moss-speech-bench --phase correctness --correctness-config correctness.local.json \
+  --output-dir results/correctness-only
+```
 
+infer保存正确性JSON的hash，score/report会重新检查九项状态及产物hash。缺失、损坏或过期证明不能继续评分。旧格式历史结果仍可离线重建，不能把其没有前置证明解释为新套件通过。
+
+## 运行
+
+```bash
+# 只验证数据和请求规模，不运行正确性、不请求服务
+moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
+  --output-dir results/base-quick --dry-run
+
+# 正确性通过后执行120条正式请求
+moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
+  --base-url http://127.0.0.1:8000 --deployment deployment.local.json \
+  --correctness-config correctness.local.json --output-dir results/base-quick
+
+# Daily/Full替换--mode；Full可显式修改扫描规模
 moss-speech-bench --mode full --config examples/daily.json --model moss-speech \
-  --base-url http://127.0.0.1:8000 --deployment deployment.json \
+  --base-url http://127.0.0.1:8000 --deployment deployment.local.json \
+  --correctness-config correctness.local.json --concurrencies 1,4,8,16 --repeats 3 \
   --output-dir results/base-full
+
+# 外层释放MOSS服务，准备ASR服务后，复用原输出评分
+moss-speech-bench --phase score --output-dir results/base-quick \
+  --score-config examples/scoring.json
+moss-speech-bench --phase report --output-dir results/base-quick
 ```
 
-`deployment.json` 由启动服务的一方提供，记录服务 Git SHA/dirty、模型和 Codec revision/hash、GPU 数量/型号、Driver/CUDA/PyTorch/SGLang 版本，以及 dtype、kernel、cache、chunk、voice、调度配置。见 [deployment.example.json](examples/deployment.example.json)；示例占位符必须换成实值。客户端无法验证远端硬件或推断其版本，不以客户端本机信息代替。
+`python -m moss_speech_bench`等价。`--base-url`只传HTTP(S)主机与端口，不带`/v1`；密钥用`--api-key-env VARIABLE_NAME`，不进入归档。`all`要求拆分infer/score，避免评分模型争用受测GPU。
 
-默认不预热。可在配置中增加一个与 `datasets` 单项同格式的 `warmup`；该集合在每个数据集/并发/重复前全部执行，另存输出，不计正式统计。其 payload 必须与正式集合不相同，任何预热失败均停止正式测量。轮次之间不重启服务。
+[deployment.example.json](examples/deployment.example.json)由服务启动方填写：实际源码提交/dirty、权重版本/hash、GPU/软件版本、dtype/kernel/cache/chunk/voice/调度；不以客户端本机信息冒充远端部署。
 
-## 指标口径
+Quick目标为包含前置正确性、推理、评分及服务准备在内约40分钟。默认infer调用预算2040秒（34分，含此调用中的正确性）、score预算180秒（3分），为外层准备留约3分；`--time-budget SECONDS`覆盖当前阶段。外层预先执行的gate、服务启动/排队不由客户端控制，必须在实际总时间中计入；单次评分模型调用也可能超过软预算。不能承诺所有硬件/首次编译都达标。需要硬截止时由外层Slurm时限控制；未完成一律partial，不以取消样本制造通过。
 
-| 指标 | 口径 |
-|---|---|
-| TTFA (`audio_ttfp_*`) | 发请求至第一个完整 SSE 事件中非空有效 PCM 到达；可能含静音 |
-| TTFT (`text_ttft_*`) | 发请求至首个非空文本 delta；客户端不能观测 delta 内 token 的独立到达时间 |
-| TTFC | 原生 Codec chunk 边界未由当前协议暴露，记 N/A |
-| Latency | 请求发送至完整响应接收结束；不含等待客户端并发名额的时间 |
-| RTF | 每请求 Latency / 实际生成的 PCM 时长 |
-| audio-s/s / QPS | 成功音频总秒数 / 成功请求数，分别除以完整测量段墙钟 |
-| Output tokens/s | 服务端 `usage.completion_tokens` / 测量段墙钟；未提供 usage 则 N/A |
-| Inter-chunk、C50/C100/C200 | 按 SSE 音频事件，复用上游播放断流算法；单块连续性 N/A |
-| GPU Peak Memory | 无服务端遥测，N/A |
+可用`--samples-per-dataset 30`改成180请求，50改成300请求，40分钟目标需按实际负载重验。采样/最大输出预算保留配置值，不暗中减少生成长度。
 
-延迟、TTFA、TTFT、RTF 保存 Mean/P50/P95/P99；分位数按单个数据集/并发/重复统计，不混合多个重复。成功请求用于这些分布，失败数和失败率单独保留。`finish_reason=length` 作为完成请求计入，但在 `length_count` 单列，不能解释成质量成功。
+## 质量协议
 
-流式输出按 PCM16 little-endian、单声道解析，默认 24 kHz（可用 `--sample-rate` 显式声明）；应与服务配置一致。非流式使用服务默认 WAV 格式，不发送请求级 `audio` 配置；解析 PCM16 WAV，TTFA/TTFT 为 N/A。音频时长以实际字节数计算，WAV 保留无损 PCM。
+[PROTOCOLS.md](PROTOCOLS.md)定义当前 `moss-spoken-qa-v2` 与历史协议边界。三个集合默认使用相同的 `spoken-qa-short-en-v1` system提示：只给简短英文答案，不重复问题或解释；不包含参考答案。可显式配置prompt，内容/hash进入归档。
 
-正式墙钟包括请求派发、网络、解码和输出写盘；每请求延迟在写盘之前截止。文件 I/O 移至线程，避免直接阻塞其他请求的网络读取，但客户端 CPU/磁盘仍可能限制吞吐，应保持对照环境一致。`engine_time_s` 是复用数据结构中的请求耗时代理，不是服务端纯计算时间。当前不提供 token 间隔或 engine RTF。
+| 路径 | 离线指标 | 局限 |
+|---|---|---|
+| S2T | normalized whole-answer EM，保存名accuracy | 不是语义judge，正确解释也可能匹配失败 |
+| S2S | Qwen3-ASR转录后同一EM；UTMOS | EM不证明语义能力，UTMOS不证明答题正确 |
+| Codec Decoder | 预留WER/CER、SIM、DNSMOS | 未实现，不从端到端QA或聊天朗读推导 |
 
-## 结果、恢复与对比
+Qwen3-ASR-1.7B统一走官方CI同源HTTP协议，默认并发32；示例外层A800配置见[qwen3-asr-server.json](examples/qwen3-asr-server.json)。长音频准入容量与客户端并发需匹配。客户端不启动ASR服务；score只上传已保存的回答WAV，不发送新的MOSS请求。Whisper依赖仅用于旧WER英文归一化，没有默认加载其ASR模型。
 
-```text
-results/<run>/
-├── manifest.json          # 客户端身份、依赖、部署声明、输入 hash、运行配置/状态
-├── inputs/*.jsonl         # 完整请求 payload 和预期答案，语音输入含 base64
-├── cells/<dataset>-c<C>-r<R>/attempt-01/
-│   ├── timing.json        # 完整测量段墙钟、请求记录 hash
-│   ├── warmup/            # 可选独立预热
-│   └── outputs/           # 每请求 events.jsonl、txt、wav、result.json
-├── requests.jsonl         # 每段最新 attempt 的请求记录，带 cell/attempt 定位
-├── performance.json      # 全部指标及 Expected/Attempted/Succeeded/Failed/Scored
-├── summary.json
-├── summary.md
-└── comparison.json / comparison.md  # 指定 baseline 时生成
-```
+主评分示例仅需英文ASR和UTMOS。SIM/双语ASR及原WER/CER实现保留供历史/custom报告复用，不进入当前三个端到端集合。可选`qa_answer_mention`仅是诊断，不能替代EM或称为官方QA Accuracy；语义评判器需独立定协议、版本及验证。
 
-部分输出、HTTP 错误、超时、空输出、异常结束都保留；默认没有重试。推理阶段的performance.json保持原始性能记录；质量评分另存quality.json，合并报告记录实际Scored和quality_expected。infer后通过score单独执行评分；all明确要求分阶段执行，以便外层释放推理服务资源。
+每个数据集/任务默认只评分一个测量段，优先C4/r1，避免Full重复12次评分。结果保存每样本转录、值、失败及hash；Accuracy主分母包含全部预期样本。缓存身份包含输入、源码、模型/依赖、提示词和部署声明。失败不静默重试，预算占位单独保留，可恢复未完成评分。
 
-```bash
-# 原命令原配置增加 --resume
-moss-speech-bench --config examples/custom.json --model moss-speech \
-  --base-url http://127.0.0.1:8000 --concurrency 1 --output-dir results/smoke --resume
+## 指标、产物与恢复
 
-# 离线重建：不需要服务和原始数据目录
-moss-speech-bench --phase report --output-dir results/base-daily
+- TTFA：首个非空有效PCM SSE事件，可能含静音；TTFT：首个非空文本delta。原生Codec边界TTFC及无遥测的GPU Peak Memory为N/A；非流式首事件为N/A。
+- Latency：发送请求至完整接收，不含客户端并发排队；RTF：每请求Latency/实际PCM时长；audio-s/s及QPS分别以完整测量段墙钟为分母。保存Mean/P50/P95/P99、length截断、失败/未执行、usage及流式连续性指标。
+- 流式解析PCM16 little-endian单声道，默认24kHz，需与服务一致；非流式按默认WAV协议。事件/输出写盘属于整段墙钟，客户端CPU/磁盘可能限制吞吐。
 
-# 比较时只允许预先声明的实验变量变化
-moss-speech-bench --phase report --output-dir results/candidate-daily \
-  --baseline results/base-daily --allow-difference deployment.settings.cuda_graph
-```
+每个run保存 `manifest.json`、`correctness/`、`inputs/`、分数据集/任务/并发/轮次的`cells/`、`requests.jsonl`、原始文本/WAV/事件、`performance.json`、`quality.json`及`summary.md/json`。Full另显示Codec deferred及不完整状态。性能原始文件不因质量评分而改变。
 
-恢复只跳过完整且 hash 有效的测量段；中断段全量新建 `attempt-02` 重跑，保留原 attempt，不拼接两次墙钟。正式段中已完成的失败不会被悄悄重试。中断段保留已持久化请求的诊断延迟，吞吐记 N/A，未获得记录的请求列为 `not_attempted`。输入、输出或完整请求记录损坏会拒绝复用。
+`--resume`仅跳过完整且hash有效的测量段；中断段新建attempt全量重跑，不拼接吞吐墙钟。原错误/部分输出保留。baseline通过`--baseline PATH`比较，核对完整输入/任务/部署/采样/指标及评分约定；实验变量需显式`--allow-difference FIELD`。不同suite版本不自动比较。
 
-baseline 必须提供双方部署元信息并匹配完整实验约定；差异全列出，未获显式允许的差异阻止计算收益。允许差异表示有意改变的变量，不表示实验自动公平。各轮报告保留原始统计与失败/截断变化，不自动生成“优化有效”的结论。
+退出码：0当前阶段完成，1失败/partial/Full含deferred，2配置或产物错误，130中断。报告重生成无需生成或ASR服务，正确性产物须完整保留。
 
-退出码：0 完成，1 有失败或未完成样本，2 配置/产物错误或未实现阶段，130 用户中断。终止进程可能发生在写盘前，缺失记录在汇总中可见；不把未持久化的请求推定为成功。
-
-## 开发验证与后续范围
+## 开发与历史证据
 
 ```bash
 ruff check .
@@ -126,81 +116,6 @@ pytest -q
 python -m build
 ```
 
-本地 HTTP 测试覆盖 UTF-8/SSE 分片、流式/非流式、音频时长、错误/usage、并发/预热、取消/恢复、产物校验、baseline 和安装后的 CLI。这些是客户端测试，不是 MOSS 模型正确性验证。eager base 单卡 A800 Quick 已完成真实推理与评分，见[实测报告](reports/eager-base-quick-20261031.md)；Daily/Full 全量和其他部署仍未验收。
+复用runner、性能与播放算法的来源/许可见[ORIGIN.md](ORIGIN.md)。客户端测试验证调度、门槛、协议、计时、校验和恢复，不冒称模型质量或数值正确性。
 
-## 离线质量评分
-
-评分直接读取运行目录的冻结输入、文本和WAV，检查hash，不向MOSS服务发请求。无需保留原始数据集目录或启动生成服务。
-
-```bash
-# 选择题文本评分只需基础安装；音频错误率需质量依赖和本地ASR权重
-pip install -e '.[quality]'
-# 按需安装WavLM SIM或UTMOS；Torch与torchaudio应匹配
-pip install -e '.[sim,utmos]'
-
-moss-speech-bench --phase score --output-dir results/base-daily \
-  --score-config examples/scoring.json
-moss-speech-bench --phase report --output-dir results/base-daily
-```
-
-[scoring.json](examples/scoring.json) 中的路径须换成本地资产，均相对该配置文件定位。省略某个模型会给对应指标记录unavailable；配置了不存在的文件则报配置错误。SIM和UTMOS默认CPU；使用CUDA需在Slurm作业中运行并遵守资源预算。ASR、SIM和UTMOS不能争用受测服务的GPU。Qwen评分通过HTTP调用外层已启动的ASR服务；`openai-whisper`依赖仅用于英文文本归一化，使用Qwen时不加载Whisper模型。显式旧版Whisper配置读取WAV时通常还需要ffmpeg。
-
-| 任务 | 指标和协议 |
-|---|---|
-| T2S EN | Qwen3-ASR服务并发转录；复用CI的EnglishTextNormalizer和jiwer WER |
-| T2S ZH | 同一Qwen3-ASR服务并发转录；复用上游中文标点归一化与逐字CER |
-| T2S SIM | 复用上游WavLM-large SV；固定音色参考，与deployment.settings.voice_reference_sha256核对；输出cosine，原实现的百分值除以100 |
-| T2T | 复用上游选择题答案提取；默认A/B，可配置choices为ABCD等；不能解析计错并记录invalid |
-| S2T / S2S QA | 已保存文本或回答音频ASR；小写、英文标点/冠词/空白归一化后与可接受答案集exact match，工程回归协议 |
-| S2S UTMOS | 复用上游16kHz重采样、PCM16和预测过程；加载本地utmos.jit |
-
-推荐按当前Omni CI由外层准备并启动Qwen/Qwen3-ASR-1.7B服务，默认ASR并发32；客户端不下载权重、不启动评分服务。外层A800部署配置参考[qwen3-asr-server.json](examples/qwen3-asr-server.json)，需替换权重路径。长音频上传上限需匹配客户端并发，分块并发设为1可控制引擎排队；否则超过30秒的回答可能因默认长音频容量不足收到503。服务首次启动可能编译算子，单列其启动耗时。本地Whisper/Paraformer适配保留为显式旧配置兼容入口（Paraformer额外安装`.[zh]`）。SIM只支持实际固定音色参考，不使用未传入模型的SeedTTS参考音色；缺少音色身份则SIM unavailable。
-
-WER/CER报告全部可评分样本的corpus错误率、逐样本均值及评分覆盖率，不排除高错误率样本。Accuracy的主值为正确数/所选集合总条数；另存evaluated_accuracy，未完成/失败样本保留。没有任何可评分样本时值为null。每项指标均记录scored/failed/unavailable/generation_failed/not_attempted数量。length输出参与评分，原finish_reason保留。
-
-默认每个数据集只选一个性能测量段，优先C4/r1，否则选manifest中的第一个；quality.json显式记录selection。可用评分配置的cells列表指定其他测量段。Full性能扫描不会触发12次重复ASR；Full额外质量数据的获取与请求准备仍属于后续全量验收范围。
-
-每样本结果保存在quality/<评分约定与输出hash>/<sample-hash>.json，保存ASR转录、归一化文本、编辑计数、分值、错误及校验hash。相同评分约定和输入会复用已保存评分，包括失败记录；换模型/依赖/配置会生成新缓存，旧记录保留，不隐式重试。中断后重新执行score可继续未保存样本。quality.json和quality.md汇总，report会校验缓存并合并至summary。summary中的scored表示所需指标全部完成的样本数；quality_expected是实际选中的质量样本数，与性能扫描总请求数区分。
-
-baseline比较还会核对评分器源码、模型资产hash、依赖版本、规范化配置和音色身份；完整且约定一致的评分才计算delta，coverage变化不会被当作质量收益。错误率越小越好、Accuracy/SIM/UTMOS越大越好，尚不设置任意质量合格阈值。
-
-本地测试验证评分协议、复用和归档行为；Qwen3-ASR、WavLM、UTMOS 已完成单卡 Quick 的真实评分，见[报告与覆盖限制](reports/eager-base-quick-20261031.md)。可选旧版 Whisper/Paraformer 和全量数据质量尚未验收。
-
-正确性入口、C00–C08固定选集、独立HF golden准入及Slurm配置见 [CORRECTNESS.md](CORRECTNESS.md)。
-
-## Quick：约30分钟的小测
-
-Quick沿用Daily四组数据：Seed EN、Seed ZH、StoryCloze、LLaMA Questions，默认每组30条，共120条，C4、单轮。使用同一份Daily配置与完整源数据清单，保留其中的采样参数和max_tokens。每组先验证原始总条数和全部ID唯一，再按`SHA256(dataset_id, subset_seed, sample_id)`排序固定选样，默认subset_seed=42。源文件行序变化不会改变选中ID；选样清单和population ID hash保存在manifest，选中请求完整保存在inputs。音频只读取选中的30条。
-
-```bash
-# 检查四组数据并打印120条请求规模，不发请求
-moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
-  --output-dir results/base-quick --dry-run
-
-# 向外层已启动的服务发请求；默认推理预算1500秒
-moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
-  --base-url http://127.0.0.1:8000 --deployment deployment.json \
-  --output-dir results/base-quick
-
-# 外层释放服务资源后，复用同一批输出离线评分；默认预算300秒
-moss-speech-bench --phase score --output-dir results/base-quick \
-  --score-config examples/scoring.json
-```
-
-`--samples-per-dataset 40`或`50`增加规模，`--subset-seed`显式更换固定选样；这两个参数仅适用于Quick。并发可调整，但保持一个并发配置和一轮。所有baseline对比必须匹配模式、选样ID/seed/hash、源数据版本、生成配置和预算。
-
-Quick的目标是推理25分钟＋评分5分钟。`--time-budget SECONDS`可分别覆盖当次infer或score预算；其他模式默认无限总预算，原有单请求timeout仍生效。预算每次显式调用重新计时，手动重试/恢复不属于原来的30分钟。
-
-推理从数据准备开始计时，在预热/请求阶段耗尽预算时取消客户端任务，保留部分产物、failed/not_attempted，状态budget_exhausted，未完成段吞吐N/A，退出码1。服务端的取消和资源释放仍由服务实现负责。
-
-评分预算在模型资产检查前开始、每个新样本前检查；已完成的评分缓存继续复用。预算耗尽的样本记budget_exhausted，单独保存该次尝试，保持完整分母和partial状态，退出码1。重新执行score只补齐未评分样本，旧预算占位记录保留，不自动重试已完成的评分失败。
-
-首次数据准备、正在执行的一条ASR/SIM/UTMOS调用、模型加载和磁盘收尾可能超出预算；服务启动/资源调度/手动等待也不计入这两段预算。因此30分钟是目标，尚未通过真实A800实测保证。输出条数、token上限及实时性能仍影响耗时。Quick只用于快速回归和探索；Daily/Full继续负责完整数据集结论，正确性套件仍独立执行。
-
-评分可采用SGLang-Omni CI同源的Qwen3-ASR HTTP流程：asr_en/asr_zh配置backend=qwen3-asr、base_url、model及concurrency（默认32）。客户端并发上传已保存WAV，使用model/language/response_format字段和服务端greedy默认值，缓存完整转录后再离线评分；不重新向MOSS发请求。英文归一化仍复用CI的EnglishTextNormalizer，此处使用其文本规则，不加载Whisper模型。UTMOS的WAV读取使用上游同样支持的soundfile float32方式，避免缺失TorchCodec导致评分失败，重采样和预测算法保持。
-
-2026-10-31单卡A800实测：正式推理1167.58秒＋最终评分61.37秒＝20分29秒，120条全部完成；计入本次启动、排错与重试实际30分55秒，未达到整个流程30分钟目标。两个成功作业的工作时间合计23分14秒仅为分段统计，尚未连续无故障复跑；详见[完整报告](reports/eager-base-quick-20261031.md)。
-
-TTS朗读与S2S问答协议、显式prompt配置和隔离HF对照入口见 [PROTOCOLS.md](PROTOCOLS.md)。默认提示词及严格EM保持原口径，答案提及诊断必须显式启用，不能作为语义准确率。
-
-TTS/S2S异常样本的HF/eager配对、ASR语言歧义及协议候选见[质量诊断报告](reports/eager-base-quality-diagnosis-20261031.md)和[协议说明](PROTOCOLS.md)。新system提示与auto-ASR均需显式配置并建立新baseline；严格TTS协议尚未全量验收。
+[旧四集Quick实测](reports/eager-base-quick-20261031.md)与[HF质量诊断](reports/eager-base-quality-diagnosis-20261031.md)保持原始身份；其Seed聊天朗读与StoryCloze不属于当前套件，旧30分钟目标也不适用于新配置。

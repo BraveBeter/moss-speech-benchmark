@@ -6,11 +6,33 @@ import hashlib
 import re
 from pathlib import Path
 
-from ._vendor.dataset import load_seedtts_samples
 from .storage import digest, read_json
 
-DAILY = {"seed_en": 1088, "seed_zh": 2020, "storycloze": 1871, "llama_questions": 300}
-PERFORMANCE = ("seed_en", "storycloze", "llama_questions")
+QA_DATASETS = {"llama_questions": 300, "trivia_qa": 1000, "web_questions": 1000}
+QA_TASKS = ("s2t", "s2s")
+QUICK_SAMPLES = 20
+QUICK_INFER_BUDGET_S = 2040
+QUICK_SCORE_BUDGET_S = 180
+SUITE_VERSION = "moss-spoken-qa-v2"
+SHORT_ANSWER_PROMPT = {
+    "name": "spoken-qa-short-en-v1",
+    "system": "Answer the spoken question in English using only a short answer phrase. "
+    "Do not repeat the question or add explanations.",
+}
+
+
+def deferred_evaluations(mode):
+    if mode != "full":
+        return {}
+    return {
+        "codec_decoder": {
+            "status": "deferred",
+            "datasets": {"seed_en": 1088, "seed_zh": 2020},
+            "reason": "Isolated Codec Decoder protocol is not implemented; no chat fallback.",
+        }
+    }
+
+
 TASKS = {"t2t", "t2s", "s2t", "s2s"}
 PROMPT_VERSION = "moss-chat-v1"
 
@@ -20,24 +42,7 @@ def _records(spec, root):
     path = (root / source).resolve()
     kind = spec["kind"]
     if kind == "seedtts":
-        if not path.is_file():
-            if path.suffix == ".lst" or Path(source).is_absolute():
-                raise FileNotFoundError(path)
-            if not re.fullmatch(r"[0-9a-f]{40}", spec.get("revision") or ""):
-                raise ValueError("Remote SeedTTS requires a fixed 40-character commit revision")
-        if path.is_file():
-            # Upstream loader skips malformed lines; reject them before loading.
-            for line in path.read_text().splitlines():
-                if line.strip() and len(line.split("|")) < 4:
-                    raise ValueError("Malformed SeedTTS meta line")
-        samples = load_seedtts_samples(
-            str(path) if path.is_file() else source,
-            split=spec.get("split", spec["language"]),
-            revision=spec.get("revision"),
-        )
-        return [
-            {"id": s.sample_id, "text": s.target_text, "expected": s.target_text} for s in samples
-        ]
+        raise ValueError("Seed-TTS-Eval is reserved for Codec Decoder evaluation, not implemented")
     if kind == "json":
         rows = read_json(path)
         if not isinstance(rows, list):
@@ -182,7 +187,7 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
     return prepared, metadata
 
 
-def load_workload(path, model, stream, mode, subset_size=30, subset_seed=42):
+def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_seed=42, tasks=None):
     path = Path(path).resolve()
     config = read_json(path)
     sampling = config.get("sampling", {})
@@ -193,36 +198,47 @@ def load_workload(path, model, stream, mode, subset_size=30, subset_seed=42):
     ids = [s["id"] for s in specs]
     if not specs or len(set(ids)) != len(ids):
         raise ValueError("Dataset IDs must be nonempty and unique")
-    if mode == "quick" and not 30 <= subset_size <= 50:
-        raise ValueError("Quick sample size must be 30..50 per dataset")
-    if mode in ("quick", "daily", "full"):
-        expected_ids = set(DAILY) if mode in ("quick", "daily") else set(PERFORMANCE)
-        allowed_ids = [expected_ids] if mode in ("quick", "daily") else [expected_ids, set(DAILY)]
-        if set(ids) not in allowed_ids or any(s["expected"] != DAILY[s["id"]] for s in specs):
-            raise ValueError(
-                "Daily requires 5279 rows; Full requires all three performance datasets"
-            )
-        expected_tasks = {
-            "seed_en": ("t2s", "en"),
-            "seed_zh": ("t2s", "zh"),
-            "storycloze": ("t2t", "en"),
-            "llama_questions": ("s2s", "en"),
-        }
-        if any((s["task"], s["language"]) != expected_tasks[s["id"]] for s in specs):
-            raise ValueError("Daily/Full dataset task/language mismatch")
+    named = mode in ("quick", "daily", "full")
+    if tasks is not None and not named:
+        raise ValueError("Task selection is only supported in named speech-QA suites")
+    if mode == "quick" and (type(subset_size) is not int or not 20 <= subset_size <= 50):
+        raise ValueError("Quick sample size must be 20..50 questions per dataset")
+    if named:
+        if set(ids) != set(QA_DATASETS) or any(
+            type(s["expected"]) is not int or s["expected"] != QA_DATASETS[s["id"]] for s in specs
+        ):
+            raise ValueError("Speech-QA suites require LLaMA 300, TriviaQA 1000, WebQuestions 1000")
+        if any(s["kind"] not in ("json", "openaudio") for s in specs):
+            raise ValueError("Named speech-QA suites require audio datasets")
+        if any(s["language"] != "en" or "task" in s for s in specs):
+            raise ValueError("Named speech-QA suites require English and tasks, not a single task")
     datasets = {}
     for spec in specs:
-        if mode == "full" and spec["id"] not in PERFORMANCE:
-            continue
-        datasets[spec["id"]] = prepare_dataset(
-            spec,
-            path.parent,
-            model=model,
-            stream=stream,
-            sampling=sampling,
-            subset_size=subset_size if mode == "quick" else None,
-            subset_seed=subset_seed,
-        )
+        selected_tasks = tasks if tasks is not None else spec.get("tasks", QA_TASKS)
+        if named and (
+            not isinstance(selected_tasks, (list, tuple))
+            or not selected_tasks
+            or len(set(selected_tasks)) != len(selected_tasks)
+            or not set(selected_tasks) <= set(QA_TASKS)
+        ):
+            raise ValueError("Speech-QA tasks must be unique s2t/s2s values")
+        for task in selected_tasks if named else [spec["task"]]:
+            resolved = dict(spec, task=task)
+            if named:
+                resolved.setdefault("prompt", SHORT_ANSWER_PROMPT)
+            rows, metadata = prepare_dataset(
+                resolved,
+                path.parent,
+                model=model,
+                stream=stream,
+                sampling=sampling,
+                subset_size=subset_size if mode == "quick" else None,
+                subset_seed=subset_seed,
+            )
+            name = f"{spec['id']}-{task}" if named else spec["id"]
+            if named:
+                metadata.update(id=name, source_dataset=spec["id"], suite_version=SUITE_VERSION)
+            datasets[name] = rows, metadata
     warmup = None
     if config.get("warmup"):
         warmup = prepare_dataset(

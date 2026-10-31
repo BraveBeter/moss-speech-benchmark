@@ -76,7 +76,7 @@ async def test_contract_rejects_subset_and_unsupported_score(server, tmp_path):
     url, _ = server
     config = workload(tmp_path)
     for extra, message in [
-        (("--mode", "daily"), "5279"),
+        (("--mode", "daily"), "LLaMA"),
         (("--phase", "all"), "separate infer and score"),
         (("--concurrency", "0"), "positive"),
     ]:
@@ -188,13 +188,12 @@ async def test_installed_cli_exit_codes_and_offline_report(server, tmp_path):
 
 
 async def test_daily_and_full_counts_without_service(tmp_path):
-    from moss_speech_bench.datasets import DAILY
+    from moss_speech_bench.datasets import QA_DATASETS
 
     # Synthetic IDs exercise scheduling only; these are not official dataset results.
     (tmp_path / "input.wav").write_bytes(b"fixture")
     specs = []
-    for name, count in DAILY.items():
-        task = "s2s" if name == "llama_questions" else "t2t" if name == "storycloze" else "t2s"
+    for name, count in QA_DATASETS.items():
         rows = [{"id": str(i), "text": str(i), "audio": "input.wav"} for i in range(count)]
         write_json(tmp_path / f"{name}.json", rows)
         specs.append(
@@ -202,26 +201,26 @@ async def test_daily_and_full_counts_without_service(tmp_path):
                 id=name,
                 kind="json",
                 source=f"{name}.json",
-                task=task,
-                language="zh" if name == "seed_zh" else "en",
+                language="en",
                 expected=count,
             )
         )
     path = tmp_path / "all.json"
     write_json(path, {"datasets": specs})
-    for mode, expected in (("daily", 5279), ("full", 39108)):
+    for mode, expected in (("daily", 4600), ("full", 55200)):
         result = await run(
             args(path, "http://127.0.0.1:1", tmp_path / "unused", "--mode", mode, "--dry-run")
         )
         assert result["formal_requests"] == expected
         assert result["warmup_requests"] == 0
         assert not (tmp_path / "unused").exists()
-    # Performance-only Full does not require the unused Chinese quality dataset.
-    write_json(path, {"datasets": [s for s in specs if s["id"] != "seed_zh"]})
-    result = await run(
-        args(path, "http://127.0.0.1:1", tmp_path / "unused", "--mode", "full", "--dry-run")
-    )
-    assert result["formal_requests"] == 39108
+    assert result["deferred_evaluations"]["codec_decoder"]["status"] == "deferred"
+    specs.pop()
+    write_json(path, {"datasets": specs})
+    with pytest.raises(ValueError, match="WebQuestions"):
+        await run(
+            args(path, "http://127.0.0.1:1", tmp_path / "unused", "--mode", "full", "--dry-run")
+        )
 
 
 async def test_buffered_audio_uses_server_default_format(server, tmp_path):
@@ -233,3 +232,38 @@ async def test_buffered_audio_uses_server_default_format(server, tmp_path):
     assert result["audio_ttfp_mean_s"] is None
     assert result["audio_duration_mean_s"] == 0.1
     assert all("audio" not in payload for payload in state["payloads"])
+
+
+async def test_deferred_decoder_is_not_a_full_pass(server, tmp_path):
+    from moss_speech_bench.datasets import deferred_evaluations
+
+    url, _ = server
+    output = tmp_path / "deferred"
+    await run(args(workload(tmp_path), url, output))
+    manifest = read_json(output / "manifest.json")
+    manifest["contract"]["deferred_evaluations"] = deferred_evaluations("full")
+    write_json(output / "manifest.json", manifest)
+    report(output)
+    summary = read_json(output / "summary.json")
+    assert summary["suite_status"] == "incomplete"
+    assert summary["deferred_evaluations"]["codec_decoder"]["datasets"] == {
+        "seed_en": 1088,
+        "seed_zh": 2020,
+    }
+    assert "Full suite is incomplete" in (output / "summary.md").read_text()
+    import asyncio
+    import sys
+
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "moss_speech_bench",
+        "--phase",
+        "report",
+        "--output-dir",
+        str(output),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, error = await process.communicate()
+    assert process.returncode == 1, error.decode()

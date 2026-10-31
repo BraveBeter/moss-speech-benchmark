@@ -14,7 +14,13 @@ from urllib.parse import urlsplit
 
 from ._vendor.runner import BenchmarkRunner, RunConfig
 from .client import ChatClient
-from .datasets import PERFORMANCE, load_workload
+from .datasets import (
+    QUICK_INFER_BUDGET_S,
+    QUICK_SAMPLES,
+    SUITE_VERSION,
+    deferred_evaluations,
+    load_workload,
+)
 from .reporting import collect_cell, report
 from .storage import dumps, read_json, source_identity, write_json
 
@@ -26,15 +32,22 @@ def parser():
         choices=("infer", "report", "score", "all", "correctness", "correctness-report"),
         default="infer",
     )
-    p.add_argument("--mode", choices=("custom", "quick", "daily", "full"), default="custom")
+    p.add_argument(
+        "--mode", choices=("custom", "quick", "quickly", "daily", "full"), default="custom"
+    )
     p.add_argument("--config", type=Path, help="Whole-dataset workload JSON")
     p.add_argument("--model")
-    p.add_argument("--samples-per-dataset", type=int, help="Quick only: 30..50, default 30")
+    p.add_argument(
+        "--samples-per-dataset",
+        type=int,
+        help="Quick only: 20..50 questions per dataset, default 20",
+    )
+    p.add_argument("--tasks", help="Speech-QA paths, default s2t,s2s; e.g. s2s only")
     p.add_argument("--subset-seed", type=int, help="Quick only: fixed selection seed, default 42")
     p.add_argument(
         "--time-budget",
         type=float,
-        help="Seconds for this phase; quick defaults: infer 1500, score 300",
+        help="Seconds for this phase; quick defaults: infer 2040, score 180",
     )
     p.add_argument("--correctness-config", type=Path)
     p.add_argument(
@@ -76,6 +89,8 @@ def parser():
 
 
 async def run(args):
+    if args.mode == "quickly":
+        args.mode = "quick"
     if args.phase in ("correctness", "correctness-report"):
         if args.dry_run:
             raise ValueError("Correctness has no dry-run; select C00 for asset preflight")
@@ -106,7 +121,11 @@ async def run(args):
         return report(args.output_dir, args.baseline, args.allow_difference)
     started = time.monotonic()
     budget = (
-        args.time_budget if args.time_budget is not None else 1500 if args.mode == "quick" else None
+        args.time_budget
+        if args.time_budget is not None
+        else QUICK_INFER_BUDGET_S
+        if args.mode == "quick"
+        else None
     )
     if budget is not None and not 0 < budget < float("inf"):
         raise ValueError("Time budget must be positive and finite")
@@ -156,8 +175,9 @@ async def run(args):
         args.model,
         args.stream,
         args.mode,
-        args.samples_per_dataset if args.samples_per_dataset is not None else 30,
+        args.samples_per_dataset if args.samples_per_dataset is not None else QUICK_SAMPLES,
         args.subset_seed if args.subset_seed is not None else 42,
+        args.tasks.split(",") if args.tasks is not None else None,
     )
     if any(not re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in datasets):
         raise ValueError("Dataset IDs may contain only letters, digits, underscore and hyphen")
@@ -172,7 +192,6 @@ async def run(args):
             status="pending",
         )
         for name, (rows, _) in datasets.items()
-        if args.mode != "full" or name in PERFORMANCE
         for repeat in range(1, repeats + 1)
         for c in levels
     ]
@@ -180,6 +199,7 @@ async def run(args):
         return {
             "scope": "performance_only",
             "mode": args.mode,
+            "deferred_evaluations": deferred_evaluations(args.mode),
             "time_budget_s": budget,
             "cells": cells,
             "formal_requests": sum(c["expected"] for c in cells),
@@ -191,6 +211,41 @@ async def run(args):
     deployment = read_json(args.deployment) if args.deployment else None
     if deployment is not None and not isinstance(deployment, dict):
         raise ValueError("Deployment metadata must be an object")
+    correctness = "outside_client_scope"
+    correctness_elapsed = 0
+    if args.mode != "custom":
+        if not args.correctness_config:
+            raise ValueError("Named suites require --correctness-config; correctness runs first")
+        from .correctness import load_suite, run_correctness
+
+        check_config = load_suite(args.correctness_config)
+        if check_config.get("base_url", "").rstrip("/") != args.base_url.rstrip("/"):
+            raise ValueError("Correctness endpoint differs from the benchmark endpoint")
+        if (
+            not args.resume
+            and args.output_dir.exists()
+            and any(p.name != "correctness" for p in args.output_dir.iterdir())
+        ):
+            raise ValueError("Output directory is not empty; use a fresh directory")
+        gate_start = time.monotonic()
+        gate_dir = args.output_dir / "correctness"
+        suite = await run_correctness(
+            args.correctness_config,
+            gate_dir,
+            resume=(gate_dir / "correctness.json").exists(),
+        )
+        correctness_elapsed = time.monotonic() - gate_start
+        if suite["status"] != "pass":
+            (args.output_dir / "summary.md").write_text(
+                "# Correctness blocked inference\n\nNo formal requests were sent. "
+                "See correctness/correctness.md.\n"
+            )
+            return {"correctness": {"failed": 1}}
+        correctness = dict(
+            status="pass",
+            report="correctness/correctness.json",
+            sha256=hashlib.sha256((gate_dir / "correctness.json").read_bytes()).hexdigest(),
+        )
     identity = source_identity()
     contract = {
         "model": args.model,
@@ -207,18 +262,26 @@ async def run(args):
         "client_source_hash": identity["source_hash"],
         "metric_version": "omni-f96b10-moss-client-v1",
     }
+    if args.mode != "custom":
+        contract.update(
+            suite_version=SUITE_VERSION, deferred_evaluations=deferred_evaluations(args.mode)
+        )
     if budget is not None:
         contract["time_budget_s"] = budget
     root = args.output_dir
     if args.resume:
-        manifest = read_json(root / "manifest.json")
+        from .reporting import _load_manifest
+
+        manifest = _load_manifest(root)
         if manifest["contract"] != contract:
             raise ValueError("Resume contract mismatch; use a new output directory")
         cells = manifest["cells"]
         if manifest["base_url"] != args.base_url:
             raise ValueError("Resume endpoint mismatch")
     else:
-        if root.exists() and any(root.iterdir()):
+        if root.exists() and any(
+            p.name != "correctness" or args.mode == "custom" for p in root.iterdir()
+        ):
             raise ValueError("Output directory is not empty; use --resume or a fresh directory")
         root.mkdir(parents=True, exist_ok=True)
         (root / "inputs").mkdir()
@@ -240,7 +303,8 @@ async def run(args):
                 name: importlib.metadata.version(name) for name in ("aiohttp", "numpy", "tqdm")
             },
             "quality_status": "not_scored",
-            "correctness": "outside_client_scope",
+            "correctness": correctness,
+            "correctness_elapsed_s": correctness_elapsed,
         }
     manifest["finished_at"] = None
     write_json(root / "manifest.json", manifest)
@@ -324,6 +388,10 @@ def main(argv=None):
     else:
         name = "correctness.md" if args.phase.startswith("correctness") else "summary.md"
         print(f"Report: {args.output_dir / name}")
+    summary_file = args.output_dir / "summary.json"
+    if not args.dry_run and summary_file.exists():
+        if read_json(summary_file).get("deferred_evaluations"):
+            return 1
     quality_file = args.output_dir / "quality.json"
     if args.phase in ("score", "report") and quality_file.exists():
         if read_json(quality_file)["status"] != "complete":

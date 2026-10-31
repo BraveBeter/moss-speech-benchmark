@@ -142,6 +142,18 @@ def _differences(a, b, prefix=""):
 
 def _load_manifest(root):
     manifest = read_json(root / "manifest.json")
+    if manifest["contract"].get("suite_version"):
+        from .correctness import render_correctness
+
+        proof = manifest.get("correctness", {})
+        if not isinstance(proof, dict) or proof.get("status") != "pass":
+            raise ValueError("Speech-QA suite has no passed correctness proof")
+        if proof.get("report") != "correctness/correctness.json":
+            raise ValueError("Invalid correctness report path")
+        if hashlib.sha256((root / proof["report"]).read_bytes()).hexdigest() != proof["sha256"]:
+            raise ValueError("Correctness proof hash mismatch")
+        if render_correctness(root / "correctness")["status"] != "pass":
+            raise ValueError("Correctness gate is incomplete")
     for name, metadata in manifest["contract"]["datasets"].items():
         rows = read_jsonl(root / "inputs" / f"{name}.jsonl")
         if len(rows) != metadata["expected"] or digest(rows) != metadata["samples_hash"]:
@@ -169,6 +181,15 @@ def report(directory, baseline=None, allow_difference=()):
             "mode": manifest["contract"]["mode"],
             "state": manifest["state"],
             "quality_status": "not_scored",
+            "correctness_status": (
+                manifest.get("correctness", {}).get("status")
+                if isinstance(manifest.get("correctness"), dict)
+                else "outside_client_scope"
+            ),
+            "deferred_evaluations": manifest["contract"].get("deferred_evaluations", {}),
+            "suite_status": "incomplete"
+            if manifest["contract"].get("deferred_evaluations")
+            else manifest["state"],
             **{
                 key: sum(s[key] for s in performance.values())
                 for key in (
@@ -187,7 +208,7 @@ def report(directory, baseline=None, allow_difference=()):
         "",
         f"Mode: {manifest['contract']['mode']}; state: {manifest['state']}. Quick results are a fixed subset, not full Daily coverage.",
         "",
-        "Quality: see offline quality section when scored. Correctness: see the separate correctness phase report.",
+        "Quality: see offline quality section when scored. Correctness: see correctness/correctness.md for named suites.",
         "",
         "TTFA = first nonempty PCM SSE event (audio_ttfp_*); native TTFC and server GPU peak: N/A.",
         "Each row is one continuous dataset/concurrency/repeat; percentiles are not pooled across repeats.",
@@ -195,6 +216,9 @@ def report(directory, baseline=None, allow_difference=()):
         "| Dataset / C / repeat | Expected | Attempted | Succeeded | Failed | Scored | Length | Latency P50 s | TTFA P95 s | RTF mean | QPS |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
+
+    for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
+        lines.extend(["", f"Deferred: {component}: {item['reason']} Full suite is incomplete."])
 
     def fmt(x):
         return "N/A" if x is None else f"{x:.5g}" if isinstance(x, float) else str(x)

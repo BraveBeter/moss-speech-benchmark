@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ._vendor.accuracy import extract_answer_letter
+from .datasets import QUICK_SCORE_BUDGET_S
 from .reporting import _load_manifest, collect_cell
 from .storage import digest, read_json, read_jsonl, source_identity, write_json
 
@@ -303,7 +304,7 @@ def score(directory, config_path=None, time_budget=None):
     budget = (
         time_budget
         if time_budget is not None
-        else 300
+        else QUICK_SCORE_BUDGET_S
         if manifest["contract"]["mode"] == "quick"
         else None
     )
