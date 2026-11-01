@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import signal
@@ -9,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
+from .providers.selection import selected_nodes
 from .storage import digest, read_json, source_identity, write_json
 
 GATES = tuple("C%02d" % i for i in range(9))
@@ -46,6 +48,14 @@ def load_suite(path):
         # eager-base is a legacy spelling of the reference compute adapter, not a Git pin.
         if config.get("native_norm_library") is not None:
             raise ValueError("Use the native-norm profile to qualify a native norm library")
+    elif profile in (
+        "context-remaining",
+        "context-small-first",
+        "context-startup-schedule",
+        "context-prefill-graph",
+    ):
+        if any(config.get(k) is not None for k in ("native_norm_library", "direct_lt_library")):
+            raise ValueError("Context profiles do not qualify a native norm or Lt library")
     elif profile == "native-tail-research":
         if not all(config.get(k) for k in ("native_tail_source", "native_tail_abi")):
             raise ValueError("native-tail research requires explicit source/header ABI library")
@@ -80,6 +90,10 @@ def preflight(config):
     assert all(Path(p).exists() for p in required)
     for name in ("audio_en", "audio_zh", "voice_wav", "code_profile"):
         assert Path(config[name]).resolve() in listed, "Unpinned input: " + name
+    if config["profile"].startswith("context-"):
+        probe = Path(config["long_text_request"]).resolve()
+        assert probe in listed, "Unpinned long text generation request"
+        assert read_json(probe)["modalities"] == ["text"]
     for gate in ("C02", "C04", "C05", "C06"):
         golden = config["golden"][gate]
         assert all(Path(p).resolve() in listed for p in golden.values()), "Unpinned golden"
@@ -137,6 +151,25 @@ def preflight(config):
     assert all(type(device) is int and 0 <= device < gpu_count for device in placement.values()), (
         "Deployment placement is outside allocated devices"
     )
+    if config["profile"].startswith("context-"):
+        assert all(
+            deployment.get(k) == v
+            for k, v in dict(
+                context_limit=40960, context_length=40960, max_total_tokens=40962
+            ).items()
+        ), "Context deployment differs from qualified capacity"
+        assert deployment.get("small_first_chunk", False) is (
+            config["profile"] == "context-small-first"
+        )
+        assert deployment.get("stream_startup_schedule") == (
+            "6_8_align25" if config["profile"] == "context-startup-schedule" else None
+        )
+    if config["profile"] == "context-prefill-graph":
+        lengths = config.get("graph_lengths", [])
+        assert isinstance(lengths, list) and 1 <= len(lengths) <= 8
+        assert all(type(n) is int and 1 <= n <= 512 for n in lengths)
+        assert len(set(lengths)) == len(lengths), "Duplicate graph length"
+        assert deployment.get("prefill_graph_lengths") == lengths
     return dict(
         status="pass",
         checks=[dict(id="identity-assets-golden", status="pass")],
@@ -212,7 +245,12 @@ def numerical_checks(gate, report, golden):
 async def provider(gate, config, output):
     # These adapters compare the declared candidate path, never a silent eager fallback.
     supported = (
-        {"ar_dtype": "bfloat16", "attention": "torch_native", "ar_tp": 1, "ar_graph": False}
+        {
+            "ar_dtype": "bfloat16",
+            "attention": "torch_native",
+            "ar_tp": 1,
+            "ar_graph": config["profile"] == "context-prefill-graph",
+        }
         if gate == "C04"
         else {"codec_dtype": "float32"}
         if gate in ("C05", "C06")
@@ -242,11 +280,13 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_AR_PREFILL_LENGTHS=json.dumps(config.get("graph_lengths", [])),
         MOSS_NATIVE_NORM_LIBRARY=config.get("native_norm_library", ""),
         MOSS_NATIVE_TAIL_SOURCE=config.get("native_tail_source", ""),
         MOSS_NATIVE_TAIL_ABI=config.get("native_tail_abi", ""),
         MOSS_CODEC_PATH=config["codec_path"],
         PYTHONPATH=config["core_root"],
+        PATH=str(Path(python).parent) + os.pathsep + os.environ.get("PATH", ""),
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
         CUBLAS_WORKSPACE_CONFIG=":4096:8",
@@ -322,10 +362,7 @@ async def provider(gate, config, output):
     assert read_json(output / "origins.json"), "Provider import origins missing"
     if gate in ("C01", "C03"):
         report = read_json(output / "coverage.json")
-        selection = read_json(PROVIDERS / "selection.json")
-        expected = selection[gate] + (
-            selection[gate + "-native-norm"] if config["profile"] == "native-norm" else []
-        )
+        expected = selected_nodes(gate, config["profile"])
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
         )
@@ -338,6 +375,10 @@ async def provider(gate, config, output):
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
         )
+    if gate == "C04" and config["profile"] == "context-prefill-graph":
+        graph = read_json(output / filenames[gate])["full_prefill_graph"]
+        assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
+        assert graph["complete_heads_and_scattered_kv_exact"] is True
     if gate == "C03" and config["profile"] == "native-tail-research":
         research = read_json(output / "native-tail-research.json")
         assert research["status"] == "unsupported" and research["total_cases"] == 32
@@ -451,7 +492,15 @@ async def run_correctness(path, output, selected=None, resume=False):
                 if gate == "C00":
                     result = preflight(config)
                 elif gate in ("C07", "C08"):
-                    result = await run_http(gate, config, folder)
+                    http_config = dict(config)
+                    if gate == "C07" and config["profile"].startswith("context-"):
+                        artifacts = suite["gates"]["C02"]["artifacts"]
+                        probe_report = next(k for k in artifacts if k.endswith("/processor.json"))
+                        assert file_hash(output / probe_report) == artifacts[probe_report]
+                        http_config["context_probes"] = read_json(output / probe_report)[
+                            "context_probes"
+                        ]
+                    result = await run_http(gate, http_config, folder)
                 else:
                     result = await provider(gate, config, folder)
                 suite["gates"][gate] = result

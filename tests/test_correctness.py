@@ -27,6 +27,14 @@ async def correct_server(tmp_path):
     async def handle(request):
         data = await request.json()
         state["calls"] += 1
+        if state.get("context") and not state.get("remaining") and data.get("max_tokens") == 1001:
+            return web.json_response({"error": "maximum 1000"}, status=400)
+        if state.get("context") and data["messages"][0]["content"] == "overflow":
+            return web.json_response({"error": "context exceeds 40960"}, status=400)
+        if state.get("remaining") and data.get("max_tokens") == 40960:
+            return web.json_response(
+                {"error": "max_new_tokens must be within [1, 40959]"}, status=400
+            )
         if "min_p" in data:
             return web.json_response({"error": "min_p unsupported"}, status=400)
         state["active"] += 1
@@ -38,10 +46,22 @@ async def correct_server(tmp_path):
             if state["corrupt"] and state["active"] > 1:
                 code += 1
             audio = data["modalities"] == ["audio"]
-            count = data["max_tokens"] if data["stream"] and data["max_tokens"] == 64 else 4
+            count = data.get("max_tokens") if data["stream"] and data.get("max_tokens") == 64 else 4
+            if state.get("context") and data.get("max_tokens") in (1, 1000):
+                count = data.get("max_tokens")
+            if state.get("remaining"):
+                count = (
+                    1001
+                    if data.get("max_tokens") == 1001
+                    else 1
+                    if data["messages"][0]["content"] == "fits"
+                    else count
+                )
             pcm = (code.to_bytes(2, "little")) * (1920 * count)
             usage = dict(prompt_tokens=5, completion_tokens=count, total_tokens=5 + count)
-            finish = "length" if count == 64 else "stop"
+            if state.get("context") and data["messages"][0]["content"] == "fits":
+                usage = dict(prompt_tokens=40959, completion_tokens=1, total_tokens=40960)
+            finish = "length" if count in (1, 64, 1000, 1001) else "stop"
             if not data["stream"]:
                 message = {"content": "" if audio else color}
                 if audio:
@@ -598,3 +618,116 @@ async def test_uncovered_compute_path_never_runs_an_eager_fallback(
     assert "declared compute path" in result["gates"][gate]["reason"]
     assert result["gates"]["C07"]["status"] == "not_run"
     assert result["status"] == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "context-remaining",
+        "context-small-first",
+        "context-startup-schedule",
+        "context-prefill-graph",
+    ],
+)
+async def test_remaining_budget_http_requires_omission_eos_and_over_1000(
+    correct_server, tmp_path, profile
+):
+    config, state = correct_server
+    state.update(context=True, remaining=True)
+    probe = tmp_path / "long-text.json"
+    write_json(probe, dict(messages=[dict(role="user", content="long text")], modalities=["text"]))
+    config.update(
+        profile=profile,
+        long_text_request=str(probe),
+        context_probes=[
+            dict(text="fits", prompt_tokens=40959),
+            dict(text="overflow", prompt_tokens=40960),
+        ],
+    )
+    result = await run_http("C07", config, tmp_path / "remaining")
+    assert result["status"] == "pass", result
+    assert result["expected"] == len(result["checks"]) == 26
+    assert result["http_attempts"] == 33
+    checks = {row["id"]: row for row in result["checks"]}
+    assert checks["generation-1001-audio"]["detail"]["completion_tokens"] == 1001
+    assert checks["omitted-eos-text"]["detail"]["finish_reason"] == "stop"
+
+
+@pytest.mark.parametrize(
+    "profile,expected",
+    [
+        ("context-remaining", 536),
+        ("context-small-first", 563),
+        ("context-startup-schedule", 596),
+        ("context-prefill-graph", 536),
+    ],
+)
+def test_context_strategy_selection_preserves_all_base_and_new_contracts(
+    tmp_path, profile, expected
+):
+    from moss_speech_bench.correctness import load_suite
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    config = dict(profile=profile, core_sha="b" * 40, workspace_root=".")
+    path = tmp_path / "profile.json"
+    write_json(path, config)
+    assert load_suite(path)["core_sha"] == "b" * 40
+    nodes = selected_nodes("C01", profile)
+    assert len(nodes) == len(set(nodes)) == expected
+    assert not any("context_limit-513" in n for n in nodes)
+    assert any("context_limit-40961" in n for n in nodes)
+    assert len(selected_nodes("C03", profile)) == (4 if profile == "context-prefill-graph" else 3)
+    write_json(path, dict(config, native_norm_library="unqualified.so"))
+    with pytest.raises(ValueError, match="native norm"):
+        load_suite(path)
+
+
+def test_historical_selection_is_unchanged():
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    assert len(selected_nodes("C01", "hf-reference")) == 514
+    assert len(selected_nodes("C03", "hf-reference")) == 3
+    assert len(selected_nodes("C01", "native-norm")) == 515
+    assert len(selected_nodes("C03", "native-norm")) == 4
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "context-remaining",
+        "context-small-first",
+        "context-startup-schedule",
+        "context-prefill-graph",
+    ],
+)
+def test_context_admission_keeps_arbitrary_git_and_rejects_wrong_capacity_or_strategy(
+    pinned_candidate, tmp_path, profile
+):
+    from moss_speech_bench.correctness import file_hash, preflight
+
+    config, _ = pinned_candidate
+    probe = tmp_path / "probe.json"
+    write_json(probe, dict(modalities=["text"]))
+    config["assets"].append(
+        dict(id="long-text", path=str(probe), level="fresh_full_hash", sha256=file_hash(probe))
+    )
+    config.update(profile=profile, long_text_request=str(probe))
+    deployment = config["deployment"]
+    deployment.update(
+        context_limit=40960,
+        context_length=40960,
+        max_total_tokens=40962,
+        small_first_chunk=profile == "context-small-first",
+        stream_startup_schedule="6_8_align25" if profile == "context-startup-schedule" else None,
+    )
+    if profile == "context-prefill-graph":
+        config["graph_lengths"] = [34, 41]
+        deployment["prefill_graph_lengths"] = [34, 41]
+    assert preflight(config)["status"] == "pass"
+    deployment["context_length"] = 1024
+    with pytest.raises(AssertionError, match="capacity"):
+        preflight(config)
+    deployment["context_length"] = 40960
+    deployment["small_first_chunk"] = not deployment["small_first_chunk"]
+    with pytest.raises(AssertionError):
+        preflight(config)

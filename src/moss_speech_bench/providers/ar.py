@@ -304,6 +304,12 @@ def run(
                     token_to_kv_pool=kv_pool,
                 )
             )
+            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "context-prefill-graph":
+                from tests.unit_test.fixtures.moss_speech_model import assert_full_prefill_graph
+
+                report["full_prefill_graph"] = assert_full_prefill_graph(
+                    model, lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"]))
+                )
             report["pool_configuration"] = {
                 "request_count": 1,
                 "maximum_context_rows": maximum_rows + 1,

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from identity import collect_origins
+from selection import selected_nodes
 
 core = Path(os.environ["MOSS_CORE_ROOT"]).resolve()
 sys.path.insert(0, str(core))
@@ -34,12 +35,7 @@ try:
     if mode in ("C01", "C03"):
         import pytest
 
-        selection = json.loads(Path(__file__).with_name("selection.json").read_text())
-        expected = selection[mode] + (
-            selection[mode + "-native-norm"]
-            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "native-norm"
-            else []
-        )
+        expected = selected_nodes(mode, os.environ.get("MOSS_CORRECTNESS_PROFILE", "hf-reference"))
 
         class Coverage:
             def __init__(self):
