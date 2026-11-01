@@ -232,7 +232,7 @@ async def run_http(gate, config, output):
             ("invalid", invalid),
         ]:
             await logical(name, function)
-        if config.get("context_remaining"):
+        if config.get("context_remaining") or config.get("profile", "").startswith("context-"):
             probes = config["context_probes"]
             assert [p["prompt_tokens"] for p in probes] == [40959, 40960]
 
@@ -240,7 +240,9 @@ async def run_http(gate, config, output):
                 trials = [
                     (p, status, omitted)
                     for p, status in zip(probes, (200, 400))
-                    for omitted in ([False, True] if config.get("context_remaining") else [False])
+                    for omitted in (
+                        [False, True] if config["profile"] != "context-window" else [False]
+                    )
                 ]
                 for probe, expected_status, omitted in trials:
                     request = payload(config, limit=1)
@@ -279,7 +281,7 @@ async def run_http(gate, config, output):
                 )
 
             async def generation_boundary(target):
-                budget = 1001 if config.get("context_remaining") else 1000
+                budget = 1001 if config["profile"] != "context-window" else 1000
                 request = payload(config, target=target, stream=True, limit=budget)
                 request["messages"][0]["content"] = (
                     "请写一篇不少于两千字的科幻故事：一位宇航员在木星的卫星上发现了一座失落的城市。请直接开始写完整故事，详细描写探索的经过和人物对话，不要写提纲，不要总结任务。"
@@ -300,7 +302,7 @@ async def run_http(gate, config, output):
                 )
 
             async def over_generation():
-                budget = 40960 if config.get("context_remaining") else 1001
+                budget = 40960 if config["profile"] != "context-window" else 1001
                 request = payload(config, limit=budget)
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=config.get("timeout", 300))
@@ -341,16 +343,16 @@ async def run_http(gate, config, output):
                 )
 
             await logical("context-boundary", context_boundary)
-            budget = 1001 if config.get("context_remaining") else 1000
+            budget = 1001 if config["profile"] != "context-window" else 1000
             await logical(f"generation-{budget}-text", lambda: generation_boundary("text"))
             await logical(f"generation-{budget}-audio", lambda: generation_boundary("audio"))
             await logical(
                 "generation-over-context-rejected"
-                if config.get("context_remaining")
+                if config["profile"] != "context-window"
                 else "generation-1001-rejected",
                 over_generation,
             )
-            if config.get("context_remaining"):
+            if config["profile"] != "context-window":
                 await logical("omitted-eos-text", lambda: omitted_eos("text"))
                 await logical("omitted-eos-audio", lambda: omitted_eos("audio"))
     else:
@@ -417,7 +419,8 @@ async def run_http(gate, config, output):
     expected = (
         (
             26
-            if config.get("context_remaining")
+            if (config.get("context_remaining") or config.get("profile", "").startswith("context-"))
+            and config["profile"] != "context-window"
             else 24
             if config.get("profile") == "context-window"
             else 20

@@ -526,13 +526,9 @@
   "C03-native-norm": [
     "tests/unit_test/moss_speech/test_model.py::test_native_norm_cuda_rounding_and_fallback"
   ],
-  "C01-direct-lt": [
-    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cpu_gradient_fallback_keeps_parameters"
-  ],
-  "C03-direct-lt": [
-    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cuda_full_affine_ownership_and_fallback",
-    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_real_codec_interleaves_exact_pcm_and_releases"
-  ],
+  "context-window-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-513]": "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-40961]"
+  },
   "C01-context-window": [
     "tests/unit_test/moss_speech/test_config.py::test_context_window_defaults_and_explicit_overrides",
     "tests/unit_test/moss_speech/test_requests.py::test_long_text_is_checked_after_canonical_tokenization",
@@ -547,9 +543,6 @@
     "tests/unit_test/moss_speech/test_config.py::test_context_window_survives_upstream_generation_and_kv_guards[40959-1]",
     "tests/unit_test/moss_speech/test_config.py::test_context_window_survives_upstream_generation_and_kv_guards[39960-1000]"
   ],
-  "context-window-replacements": {
-    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-513]": "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-40961]"
-  },
   "C01-context-remaining": [
     "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40959-None-True]",
     "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40960-None-False]",
@@ -562,23 +555,193 @@
     "tests/unit_test/moss_speech/test_streaming.py::test_text_stream_accepts_more_than_1000_and_rejects_context_overflow",
     "tests/unit_test/moss_speech/test_streaming.py::test_codec_rejects_context_overflow_and_releases_session"
   ],
+  "C03-context-prefill-graph": [
+    "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cuda_request_rng_accepts_the_full_torch_seed_range[-1]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cuda_request_rng_accepts_the_full_torch_seed_range[9223372036854775815]",
+    "tests/unit_test/moss_speech/test_model.py::test_full_prefill_graph_matches_eager_and_scattered_kv"
+  ],
+  "C01-context-small-first": [
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[325]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[326]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[327]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[328]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[329]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[330]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[331]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[332]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[333]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[334]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[335]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[336]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[337]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[338]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[339]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[340]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[341]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[342]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[343]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[344]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[345]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[346]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[347]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[348]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[349]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_config_rejects_invalid_profiles",
+    "tests/unit_test/moss_speech/test_codec.py::test_startup_preserves_context_sized_code_budget"
+  ],
+  "C01-context-startup-schedule": [
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[325]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[326]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[327]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[328]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[329]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[330]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[331]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[332]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[333]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[334]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[335]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[336]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[337]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[338]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[339]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[340]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[341]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[342]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[343]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[344]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[345]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[346]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[347]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[348]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_boundaries_and_tail[349]",
+    "tests/unit_test/moss_speech/test_codec.py::test_small_first_config_rejects_invalid_profiles",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[325]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[326]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[327]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[328]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[329]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[330]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[331]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[332]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[333]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[334]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[335]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[336]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[337]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[338]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[339]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[340]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[341]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[342]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[343]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[344]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[345]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[346]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[347]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[348]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_alignment_and_samples[349]",
+    "tests/unit_test/moss_speech/test_codec.py::test_startup_schedule_factory_binds_real_codec",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_short_tail_retry_and_rng[1]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_short_tail_retry_and_rng[8]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_short_tail_retry_and_rng[9]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_short_tail_retry_and_rng[16]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_short_tail_retry_and_rng[17]",
+    "tests/unit_test/moss_speech/test_codec.py::test_scheduled_startup_short_tail_retry_and_rng[36]",
+    "tests/unit_test/moss_speech/test_codec.py::test_startup_preserves_context_sized_code_budget[small-first]",
+    "tests/unit_test/moss_speech/test_codec.py::test_startup_preserves_context_sized_code_budget[schedule]"
+  ],
+  "C01-direct-lt": [
+    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cpu_gradient_fallback_keeps_parameters"
+  ],
+  "C03-direct-lt": [
+    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cuda_full_affine_ownership_and_fallback",
+    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_real_codec_interleaves_exact_pcm_and_releases"
+  ],
   "C01-ar-prefix-cache": [
     "tests/unit_test/moss_speech/test_config.py::test_prefix_cache_is_strict_opt_in_and_reaches_engine_factory",
     "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[audio]",
-    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[text]",
-    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[salt]",
     "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[extra]",
     "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[length]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[salt]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[text]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_long_prompt_cache_preserves_remaining_context_budget[1201]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_long_prompt_cache_preserves_remaining_context_budget[None]",
     "tests/unit_test/moss_speech/test_prefix_cache.py::test_real_checkpoint_deduplicates_locks_rebinds_and_evicts",
-    "tests/unit_test/moss_speech/test_prefix_cache.py::test_uncomputed_generated_tail_and_abort_cleanup_never_enter_tree",
-    "tests/unit_test/moss_speech/test_prefix_cache.py::test_retracted_generated_history_cannot_reuse_or_overwrite_prompt_kv"
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_retracted_generated_history_cannot_reuse_or_overwrite_prompt_kv",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_uncomputed_generated_tail_and_abort_cleanup_never_enter_tree"
   ],
   "C03-ar-prefix-cache": [
     "tests/unit_test/moss_speech/test_model.py::test_cuda_prefix_hits_preserve_both_logits_and_all_kv_layers"
   ],
-  "C01-score-release": [
+  "C01-ar-sampling-history": [
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[True]",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_history_budget_failure_keeps_committed_rows_usable",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_history_uses_remaining_budget_beyond_1000_rows_and_releases_on_cancel[1201]",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_history_uses_remaining_budget_beyond_1000_rows_and_releases_on_cancel[None]",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_runner_rebuilds_history_after_request_inputs_change[device]",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_runner_rebuilds_history_after_request_inputs_change[prompt]",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_runner_rebuilds_history_after_request_inputs_change[rewind]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.0-False-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.0-True-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.1-False-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.1-True-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-2.0-False-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-2.0-True-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.0-False-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.0-True-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.1-False-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.1-True-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-2.0-False-cpu]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-2.0-True-cpu]"
+  ],
+  "C01-ar-sampling-history-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget": "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[False]"
+  },
+  "C03-ar-sampling-history": [
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.0-False-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.0-True-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.1-False-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-1.1-True-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-2.0-False-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[0-2.0-True-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.0-False-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.0-True-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.1-False-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-1.1-True-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-2.0-False-cuda]",
+    "tests/unit_test/moss_speech/test_sampling.py::test_cached_history_preserves_real_runner_rows_and_request_rng[1-2.0-True-cuda]"
+  ],
+  "C01-ar-host-metadata": [
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[True]",
+    "tests/unit_test/moss_speech/test_config.py::test_host_metadata_builder_binds_only_its_backend[False]",
+    "tests/unit_test/moss_speech/test_config.py::test_host_metadata_builder_binds_only_its_backend[True]",
+    "tests/unit_test/moss_speech/test_config.py::test_host_metadata_rejects_unsupported_execution_profiles[enable_pdmux-True]",
+    "tests/unit_test/moss_speech/test_config.py::test_host_metadata_rejects_unsupported_execution_profiles[enable_single_batch_overlap-True]",
+    "tests/unit_test/moss_speech/test_config.py::test_host_metadata_rejects_unsupported_execution_profiles[enable_two_batch_overlap-True]",
+    "tests/unit_test/moss_speech/test_config.py::test_host_metadata_rejects_unsupported_execution_profiles[speculative_algorithm-EAGLE]",
+    "tests/unit_test/moss_speech/test_model.py::test_host_metadata_cpu_preserves_long_context_model_logits_and_kv",
+    "tests/unit_test/moss_speech/test_model.py::test_host_metadata_cpu_preserves_model_logits_and_all_tail_kv",
+    "tests/unit_test/moss_speech/test_model.py::test_host_metadata_prefix_freshness_and_lifetime_use_real_sdpa[False]",
+    "tests/unit_test/moss_speech/test_model.py::test_host_metadata_prefix_freshness_and_lifetime_use_real_sdpa[True]",
+    "tests/unit_test/moss_speech/test_model.py::test_native_cpu_prefill_decode_keep_requests_and_tail_kv_independent[True]"
+  ],
+  "C01-ar-host-metadata-replacements": {
+    "tests/unit_test/moss_speech/test_model.py::test_native_cpu_prefill_decode_keep_requests_and_tail_kv_independent": "tests/unit_test/moss_speech/test_model.py::test_native_cpu_prefill_decode_keep_requests_and_tail_kv_independent[False]",
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget": "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[False]"
+  },
+  "C03-ar-host-metadata": [
+    "tests/unit_test/moss_speech/test_model.py::test_host_metadata_cuda_preserves_long_context_model_logits_and_kv",
+    "tests/unit_test/moss_speech/test_model.py::test_host_metadata_cuda_preserves_model_logits_and_all_tail_kv",
+    "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent[True]"
+  ],
+  "C03-ar-host-metadata-replacements": {
+    "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent": "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent[False]"
+  },
+  "C01-codec-score-release": [
     "tests/unit_test/moss_speech/test_codec.py::test_relative_attention_releases_score_temporaries[False]",
     "tests/unit_test/moss_speech/test_codec.py::test_relative_attention_releases_score_temporaries[True]"
   ],
-  "C03-score-release": []
+  "C03-codec-score-release": []
 }

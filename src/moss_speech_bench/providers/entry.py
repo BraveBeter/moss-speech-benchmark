@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from identity import collect_origins
-from selection import expected_tests
+from selection import selected_nodes
 
 core = Path(os.environ["MOSS_CORE_ROOT"]).resolve()
 sys.path.insert(0, str(core))
@@ -35,9 +35,7 @@ try:
     if mode in ("C01", "C03"):
         import pytest
 
-        selection = json.loads(Path(__file__).with_name("selection.json").read_text())
-        expected = expected_tests(
-            selection,
+        expected = selected_nodes(
             mode,
             os.environ.get("MOSS_CORRECTNESS_PROFILE", "hf-reference"),
             os.environ.get("MOSS_CONTEXT_REMAINING") == "1",
