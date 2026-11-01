@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import signal
@@ -43,6 +44,8 @@ def load_suite(path):
     if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
         raise ValueError("Correctness requires an explicit full candidate SHA")
     profile = config.get("profile")
+    if type(config.get("context_remaining", False)) is not bool:
+        raise ValueError("context_remaining must be a boolean")
     if profile in (
         "hf-reference",
         "eager-base",
@@ -53,6 +56,15 @@ def load_suite(path):
         # eager-base is a legacy spelling of the reference compute adapter, not a Git pin.
         if config.get("native_norm_library") is not None:
             raise ValueError("Use the native-norm profile to qualify a native norm library")
+    elif profile in (
+        "context-remaining",
+        "context-small-first",
+        "context-startup-schedule",
+        "context-prefill-graph",
+    ):
+        if any(config.get(k) is not None for k in ("native_norm_library", "direct_lt_library")):
+            raise ValueError("Context profiles do not qualify a native norm or Lt library")
+        config["context_remaining"] = True
     elif profile == "native-tail-research":
         if not all(config.get(k) for k in ("native_tail_source", "native_tail_abi")):
             raise ValueError("native-tail research requires explicit source/header ABI library")
@@ -61,8 +73,6 @@ def load_suite(path):
             raise ValueError("native-norm requires an explicit native library")
     else:
         raise ValueError("Unknown correctness profile")
-    if type(config.get("context_remaining", False)) is not bool:
-        raise ValueError("context_remaining must be a boolean")
     if profile == "ar-projection-graph" and (
         type(config.get("projection_graph_batch_size")) is not int
         or not 1 <= config["projection_graph_batch_size"] <= 4
@@ -94,7 +104,7 @@ def preflight(config):
     assert all(Path(p).exists() for p in required)
     for name in ("audio_en", "audio_zh", "voice_wav", "code_profile"):
         assert Path(config[name]).resolve() in listed, "Unpinned input: " + name
-    if config.get("context_remaining"):
+    if config.get("context_remaining") or config["profile"].startswith("context-"):
         probe = Path(config["long_text_request"]).resolve()
         assert probe in listed, "Unpinned long text generation request"
         assert read_json(probe)["modalities"] == ["text"]
@@ -155,7 +165,7 @@ def preflight(config):
         )
     if config["profile"] == "mixed-modalities":
         assert deployment.get("mixed_modalities") is True
-    if config.get("context_remaining"):
+    if config.get("context_remaining") or config["profile"].startswith("context-"):
         assert all(
             deployment.get(k) == v
             for k, v in {
@@ -163,7 +173,7 @@ def preflight(config):
                 "context_length": 40960,
                 "max_total_tokens": 40962,
             }.items()
-        ), "Remaining-context deployment differs from declared full window"
+        ), "Remaining-context deployment differs from declared full window capacity"
     gpu_count = deployment.get("gpu_count")
     assert type(gpu_count) is int and gpu_count > 0, "Invalid deployment GPU count"
     assert deployment.get("voice_sha256") == file_hash(config["voice_wav"])
@@ -172,6 +182,19 @@ def preflight(config):
     assert all(type(device) is int and 0 <= device < gpu_count for device in placement.values()), (
         "Deployment placement is outside allocated devices"
     )
+    if config["profile"].startswith("context-"):
+        assert deployment.get("small_first_chunk", False) is (
+            config["profile"] == "context-small-first"
+        )
+        assert deployment.get("stream_startup_schedule") == (
+            "6_8_align25" if config["profile"] == "context-startup-schedule" else None
+        )
+    if config["profile"] == "context-prefill-graph":
+        lengths = config.get("graph_lengths", [])
+        assert isinstance(lengths, list) and 1 <= len(lengths) <= 8
+        assert all(type(n) is int and 1 <= n <= 512 for n in lengths)
+        assert len(set(lengths)) == len(lengths), "Duplicate graph length"
+        assert deployment.get("prefill_graph_lengths") == lengths
     return dict(
         status="pass",
         checks=[dict(id="identity-assets-golden", status="pass")],
@@ -251,7 +274,7 @@ async def provider(gate, config, output):
             "ar_dtype": "bfloat16",
             "attention": "torch_native",
             "ar_tp": 1,
-            "ar_graph": config["profile"] == "ar-decode-graph",
+            "ar_graph": config["profile"] in ("ar-decode-graph", "context-prefill-graph"),
         }
         if gate == "C04"
         else {"codec_dtype": "float32"}
@@ -298,12 +321,16 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
-        MOSS_CONTEXT_REMAINING="1" if config.get("context_remaining") else "0",
+        MOSS_CONTEXT_REMAINING="1"
+        if config.get("context_remaining") or config["profile"].startswith("context-")
+        else "0",
+        MOSS_AR_PREFILL_LENGTHS=json.dumps(config.get("graph_lengths", [])),
         MOSS_NATIVE_NORM_LIBRARY=config.get("native_norm_library", ""),
         MOSS_NATIVE_TAIL_SOURCE=config.get("native_tail_source", ""),
         MOSS_NATIVE_TAIL_ABI=config.get("native_tail_abi", ""),
         MOSS_CODEC_PATH=config["codec_path"],
         PYTHONPATH=config["core_root"],
+        PATH=str(Path(python).parent) + os.pathsep + os.environ.get("PATH", ""),
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
         CUBLAS_WORKSPACE_CONFIG=":4096:8",
@@ -399,6 +426,10 @@ async def provider(gate, config, output):
         graph = read_json(output / filenames[gate])["full_decode_graph"]
         assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
         assert graph["complete_heads_exact"] is True
+    if gate == "C04" and config["profile"] == "context-prefill-graph":
+        graph = read_json(output / filenames[gate])["full_prefill_graph"]
+        assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
+        assert graph["complete_heads_and_scattered_kv_exact"] is True
     if gate == "C03" and config["profile"] == "native-tail-research":
         research = read_json(output / "native-tail-research.json")
         assert research["status"] == "unsupported" and research["total_cases"] == 32

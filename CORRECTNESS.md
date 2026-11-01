@@ -173,3 +173,18 @@ Extend the corresponding adapter to execute and compare that actual path before
 claiming support. A passing branch-independent admission check is not a model
 numerical pass. C01/C03 still require the fixed test node IDs in the candidate;
 missing or skipped tests are never treated as success.
+
+
+## New eager base and P2 migration profiles
+
+`context-remaining` qualifies the 40960 logical/40962 physical context and remaining-budget default. `context-small-first`, `context-startup-schedule`, and `context-prefill-graph` include the same contract plus the corresponding existing strategy tests. Candidates remain identified by any explicit full SHA; Git ancestry is not an oracle.
+
+All four require `long_text_request` in the pinned asset allowlist. C01 runs 536 baseline cases, 563 for small-first, 596 for startup schedule. C02 constructs exact 40959/40960 prompt probes. C07 requires acceptance/rejection, explicit 1001-token text/audio output, omitted/null budget with early EOS, and recovery: 26 named checks. C08 retains exact concurrent isolation for each selected strategy.
+
+For small-first set `deployment.small_first_chunk=true`; for schedule set it false and `deployment.stream_startup_schedule="6_8_align25"`. These must match the actual `audio_vocoder.factory` fields in the externally started server. Other context profiles leave both disabled. All use `context_limit=context_length=40960` and `max_total_tokens=40962`.
+
+Prefill graphs additionally require `graph_lengths` and identical `deployment.prefill_graph_lengths` (one to eight distinct lengths within 1..512), and `deployment.ar_graph=true`. C03 runs the existing full prefill graph GPU test; C04 invokes the candidate full-weight fixture, requires actual capture/replay and exact complete heads/scattered KV across all 40 layers. Unsupported shapes remain eager; a successful fallback alone does not qualify Graph. Example factory field: `ar_engine.factory.prefill_graph_lengths=[34,41]`.
+
+C06 remains an independent HF full offline codec comparison. Startup changes the streaming chunk schedule and may change PCM; C07/C08 verify the actual strategy's protocol, full sample accounting, repeatability and isolation, not cross-strategy waveform or perceptual equality. Offline quality scoring is separate.
+
+The eight independent HF AR cases remain the original prefill inputs. Finite Graph qualification additionally checks candidate complete-checkpoint Graph against eager heads/KV; if the HF cases are outside the configured bank, they are fallback coverage and are not a new direct Graph-HF numerical oracle.

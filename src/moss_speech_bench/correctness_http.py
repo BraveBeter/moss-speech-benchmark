@@ -105,6 +105,8 @@ def check(row, request, directory):
 
 
 async def run_http(gate, config, output):
+    if config.get("profile", "").startswith("context-"):
+        config = dict(config, context_remaining=True)
     output = Path(output)
     key = os.environ.get(config["api_key_env"]) if config.get("api_key_env") else None
     if config.get("api_key_env") and not key:

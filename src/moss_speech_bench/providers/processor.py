@@ -213,7 +213,9 @@ def compare_core(reference: dict, result: dict) -> None:
         for record in result["left_padding_comparisons"].values()
         for key in ("grid", "mask")
     )
-    if os.environ.get("MOSS_CONTEXT_REMAINING") == "1":
+    if os.environ.get("MOSS_CONTEXT_REMAINING") == "1" or os.environ.get(
+        "MOSS_CORRECTNESS_PROFILE", ""
+    ).startswith("context-"):
         probes = []
         for target_length in (40959, 40960):
             repetitions = target_length
