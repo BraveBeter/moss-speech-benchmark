@@ -433,6 +433,9 @@ async def provider(gate, config, output):
         graph = read_json(output / filenames[gate])["full_prefill_graph"]
         assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
         assert graph["complete_heads_and_scattered_kv_exact"] is True
+    if gate == "C04" and config["profile"] == "ar-host-metadata":
+        assert read_json(output / filenames[gate])["host_metadata_prefills"] == 8
+        checks.append(dict(id="host-metadata-fullweight-prefills", status="pass"))
     if gate == "C04" and config["profile"] == "ar-prefix-cache":
         for name, case in read_json(output / filenames[gate])["cases"].items():
             reuse = case["prefix_cache"]

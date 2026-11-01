@@ -297,7 +297,13 @@ def run(
                 enable_memory_saver=False,
                 enable_alt_stream=False,
             )
-            backend = TorchNativeAttnBackend(
+            backend_type = TorchNativeAttnBackend
+            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-host-metadata":
+                from sglang_omni.models.moss_speech.attention import MossSpeechTorchNativeBackend
+
+                backend_type = MossSpeechTorchNativeBackend
+                report["host_metadata_prefills"] = 0
+            backend = backend_type(
                 SimpleNamespace(
                     device=str(device),
                     req_to_token_pool=request_pool,
@@ -341,6 +347,9 @@ def run(
                 torch.cuda.synchronize(device)
                 started_seconds = time.perf_counter()
                 output = prefill(model, grid, backend)
+                if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-host-metadata":
+                    assert backend.host_metadata is not None
+                    report["host_metadata_prefills"] += 1
                 if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-prefix-cache":
                     from tests.unit_test.fixtures.moss_speech_prefix_cache import (
                         verify_cached_prefill,
