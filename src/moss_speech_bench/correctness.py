@@ -44,6 +44,8 @@ def load_suite(path):
     if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
         raise ValueError("Correctness requires an explicit full candidate SHA")
     profile = config.get("profile")
+    if not isinstance(profile, str):
+        raise ValueError("Unknown correctness profile")
     if profile.startswith("context-"):
         config["context_remaining"] = True
     activation = {
@@ -92,6 +94,8 @@ def load_suite(path):
             raise ValueError("Enabled deployment requires profile " + declared_profile)
     if deployment.get("cfm_graph_mel_length") is not None and profile != "codec-cfm-graph":
         raise ValueError("Enabled CFM graph requires codec-cfm-graph profile")
+    if config.get("native_norm_library") and profile != "native-norm":
+        raise ValueError("Native norm requires its explicit profile")
     if config.get("direct_lt_library") and profile != "direct-lt":
         raise ValueError("Native DirectLt requires its explicit profile")
     return config
@@ -105,6 +109,14 @@ def preflight(config):
 
     assert git("rev-parse", "HEAD") == config["core_sha"], "Candidate SHA mismatch"
     assert not git("status", "--porcelain"), "Candidate worktree must be clean"
+    if config.get("context_remaining"):
+        assert all(
+            config["deployment"].get(k) == v
+            for k, v in dict(
+                context_limit=40960, context_length=40960, max_total_tokens=40962
+            ).items()
+        ), "Context deployment differs from qualified capacity"
+
     verified = []
     assert config["assets"], "Asset/golden allowlist is required"
     for asset in config["assets"]:

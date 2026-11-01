@@ -815,3 +815,20 @@ def test_p3_exact_collected_selection_counts(profile, cpu, cuda):
             )
             == 2
         )
+
+
+@pytest.mark.parametrize("field", ["context_limit", "context_length", "max_total_tokens"])
+def test_p3_preflight_rejects_every_mismatched_context_capacity(pinned_candidate, field):
+    from moss_speech_bench.correctness import preflight
+
+    config, _ = pinned_candidate
+    config.update(context_remaining=True, profile="ar-sampling-history")
+    config["deployment"].update(
+        context_limit=40960,
+        context_length=40960,
+        max_total_tokens=40962,
+        cache_sampling_history=True,
+    )
+    config["deployment"][field] = 512
+    with pytest.raises(AssertionError, match="Context deployment"):
+        preflight(config)
