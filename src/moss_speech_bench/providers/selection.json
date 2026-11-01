@@ -526,9 +526,6 @@
   "C03-native-norm": [
     "tests/unit_test/moss_speech/test_model.py::test_native_norm_cuda_rounding_and_fallback"
   ],
-  "context-window-replacements": {
-    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-513]": "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-40961]"
-  },
   "C01-context-window": [
     "tests/unit_test/moss_speech/test_config.py::test_context_window_defaults_and_explicit_overrides",
     "tests/unit_test/moss_speech/test_requests.py::test_long_text_is_checked_after_canonical_tokenization",
@@ -543,6 +540,9 @@
     "tests/unit_test/moss_speech/test_config.py::test_context_window_survives_upstream_generation_and_kv_guards[40959-1]",
     "tests/unit_test/moss_speech/test_config.py::test_context_window_survives_upstream_generation_and_kv_guards[39960-1000]"
   ],
+  "context-window-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-513]": "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-40961]"
+  },
   "C01-context-remaining": [
     "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40959-None-True]",
     "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40960-None-False]",
@@ -554,6 +554,67 @@
     "tests/unit_test/moss_speech/test_streaming.py::test_terminal_audio_preserves_natural_eos_and_length_code_counts[length-1001]",
     "tests/unit_test/moss_speech/test_streaming.py::test_text_stream_accepts_more_than_1000_and_rejects_context_overflow",
     "tests/unit_test/moss_speech/test_streaming.py::test_codec_rejects_context_overflow_and_releases_session"
+  ],
+  "C01-ar-projection-graph": [
+    "tests/unit_test/moss_speech/test_config.py::test_projection_batch_profile_rejects_invalid_values[0]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_batch_profile_rejects_invalid_values[5]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_batch_profile_rejects_invalid_values[True]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_batch_profile_rejects_invalid_values[1.0]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_batch_profile_rejects_invalid_values[2]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_profile_reaches_actual_ar_factory[None]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_profile_reaches_actual_ar_factory[1]",
+    "tests/unit_test/moss_speech/test_config.py::test_projection_profile_reaches_actual_ar_factory[4]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_sections_preserve_independent_hf_math[False]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_sections_preserve_independent_hf_math[True]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_startup_rejects_cpu_before_cuda_allocation",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_cleanup_attempts_all_graphs_and_detaches_owner[stream]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_cleanup_attempts_all_graphs_and_detaches_owner[reset]"
+  ],
+  "C03-ar-projection-graph": [
+    "tests/unit_test/moss_speech/test_model.py::test_projection_cuda_replays_full_model_and_all_kv_exactly[1]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_cuda_replays_full_model_and_all_kv_exactly[2]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_cuda_replays_full_model_and_all_kv_exactly[3]",
+    "tests/unit_test/moss_speech/test_model.py::test_projection_cuda_replays_full_model_and_all_kv_exactly[4]"
+  ],
+  "C03-ar-decode-graph": [
+    "tests/unit_test/moss_speech/test_model.py::test_full_decode_graph_matches_eager_and_owns_outputs"
+  ],
+  "C01-ar-decode-graph": [],
+  "C01-mixed-modalities": [
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_cli_roundtrip_is_ar_only_and_instance_local[False]",
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_cli_roundtrip_is_ar_only_and_instance_local[True]",
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_rejects_non_boolean_typed_values[true]",
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_rejects_non_boolean_typed_values[false]",
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_rejects_non_boolean_typed_values[0]",
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_rejects_non_boolean_typed_values[1]",
+    "tests/unit_test/moss_speech/test_config.py::test_mixed_admission_rejects_non_boolean_typed_values[None]",
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_mixed_output_adapters_admit_and_finish_each_request_independently[True]"
+  ],
+  "C01-mixed-modalities-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget": [
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[default]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[disabled]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[enabled]"
+    ],
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_abort_releases_only_matching_actual_request_and_model_logits": [
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_abort_releases_only_matching_actual_request_and_model_logits[False]",
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_abort_releases_only_matching_actual_request_and_model_logits[True]"
+    ],
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_duplicate_live_id_cannot_replace_existing_request": [
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_duplicate_live_id_cannot_replace_existing_request[False]",
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_duplicate_live_id_cannot_replace_existing_request[True]"
+    ],
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_cancel_before_late_builder_admission_leaves_no_live_resources": [
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_cancel_before_late_builder_admission_leaves_no_live_resources[False]",
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_cancel_before_late_builder_admission_leaves_no_live_resources[True]"
+    ],
+    "tests/unit_test/moss_speech/test_lifecycle.py::test_retry_keeps_prompt_seed_and_restarts_generated_history": [
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_retry_keeps_prompt_seed_and_restarts_generated_history[False]",
+      "tests/unit_test/moss_speech/test_lifecycle.py::test_retry_keeps_prompt_seed_and_restarts_generated_history[True]"
+    ]
+  },
+  "C03-mixed-modalities": [
+    "tests/unit_test/moss_speech/test_model.py::test_mixed_output_cuda_batch_preserves_complete_heads_and_kv"
   ],
   "C03-context-prefill-graph": [
     "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent",
@@ -652,6 +713,68 @@
     "tests/unit_test/moss_speech/test_codec.py::test_startup_preserves_context_sized_code_budget[small-first]",
     "tests/unit_test/moss_speech/test_codec.py::test_startup_preserves_context_sized_code_budget[schedule]"
   ],
+  "test_suites": {
+    "p4-15": {
+      "C01": {
+        "add": [
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_accumulates_codes_without_entering_rng_or_cudnn_scopes[5-2]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_accumulates_codes_without_entering_rng_or_cudnn_scopes[5-5]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_accumulates_codes_without_entering_rng_or_cudnn_scopes[25-2]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_accumulates_codes_without_entering_rng_or_cudnn_scopes[25-25]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_short_stream_still_enters_rng_scope_and_flushes_when_final[False]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_short_stream_still_enters_rng_scope_and_flushes_when_final[True]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_fast_return_keeps_validation_and_session_cleanup[codes0-Invalid]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_fast_return_keeps_validation_and_session_cleanup[codes1-40960]",
+          "tests/unit_test/moss_speech/test_codec.py::test_unready_stream_accepts_codes_beyond_the_old_length_limit"
+        ]
+      }
+    },
+    "p4-16": {
+      "C01": {
+        "replace": {
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order": "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[False-False-cpu]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_minimum_audio_length_uses_committed_rows_instead_of_framework_counter": "tests/unit_test/moss_speech/test_sampling.py::test_minimum_audio_length_uses_committed_rows_instead_of_framework_counter[cpu]"
+        },
+        "add": [
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[False-True-cpu]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[True-False-cpu]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[True-True-cpu]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_scalar_sampling_fallback_keeps_channel_order[cpu]"
+        ]
+      },
+      "C03": {
+        "add": [
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[False-False-cuda]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[False-True-cuda]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[True-False-cuda]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_sample_row_uses_text_then_audio_rng_draw_order[True-True-cuda]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_scalar_sampling_fallback_keeps_channel_order[cuda]",
+          "tests/unit_test/moss_speech/test_sampling.py::test_minimum_audio_length_uses_committed_rows_instead_of_framework_counter[cuda]"
+        ]
+      }
+    },
+    "p4-17": {
+      "C03": {
+        "add": [
+          "tests/unit_test/moss_speech/test_codec.py::test_streaming_overlap_keeps_pcm_on_host_and_conditioning_on_device"
+        ]
+      }
+    },
+    "p4-18": {
+      "C01": {
+        "add": [
+          "tests/unit_test/moss_speech/test_codec.py::test_streaming_codec_loads_only_missing_component",
+          "tests/unit_test/moss_speech/test_codec.py::test_vocoder_factory_shares_hift_with_serial_ownership[False]",
+          "tests/unit_test/moss_speech/test_codec.py::test_vocoder_factory_shares_hift_with_serial_ownership[True]"
+        ]
+      },
+      "C03": {
+        "add": [
+          "tests/unit_test/moss_speech/test_codec.py::test_cuda_shared_hift_preserves_real_pcm_and_lifetime"
+        ]
+      }
+    }
+  },
   "C01-direct-lt": [
     "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cpu_gradient_fallback_keeps_parameters"
   ],
@@ -743,5 +866,50 @@
     "tests/unit_test/moss_speech/test_codec.py::test_relative_attention_releases_score_temporaries[False]",
     "tests/unit_test/moss_speech/test_codec.py::test_relative_attention_releases_score_temporaries[True]"
   ],
-  "C03-codec-score-release": []
+  "C03-codec-score-release": [],
+  "C01-codec-cfm-graph": [
+    "tests/unit_test/moss_speech/test_codec.py::test_cfm_failed_replay_does_not_duplicate_eager_work_and_preserves_new_hook",
+    "tests/unit_test/moss_speech/test_codec.py::test_cfm_graph_cpu_startup_rejects_explicit_opt_in_without_installing_hook[25]",
+    "tests/unit_test/moss_speech/test_codec.py::test_cfm_graph_cpu_startup_rejects_explicit_opt_in_without_installing_hook[5]",
+    "tests/unit_test/moss_speech/test_codec.py::test_cfm_replay_copies_six_inputs_and_keeps_session_mel_tail_owned",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_repairs_only_empty_rows_and_preserves_full_context_alias[all-empty-0]",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_repairs_only_empty_rows_and_preserves_full_context_alias[all-empty-2]",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_repairs_only_empty_rows_and_preserves_full_context_alias[all-valid-0]",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_repairs_only_empty_rows_and_preserves_full_context_alias[all-valid-2]",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_repairs_only_empty_rows_and_preserves_full_context_alias[empty-first-chunk-0]",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_repairs_only_empty_rows_and_preserves_full_context_alias[empty-first-chunk-2]",
+    "tests/unit_test/moss_speech/test_config.py::test_cfm_graph_shape_config_rejects_out_of_profile_lengths[0]",
+    "tests/unit_test/moss_speech/test_config.py::test_cfm_graph_shape_config_rejects_out_of_profile_lengths[101]",
+    "tests/unit_test/moss_speech/test_config.py::test_cfm_graph_shape_config_rejects_out_of_profile_lengths[1500.5]",
+    "tests/unit_test/moss_speech/test_config.py::test_cfm_graph_shape_config_rejects_out_of_profile_lengths[4100]",
+    "tests/unit_test/moss_speech/test_config.py::test_vocoder_factory_consumes_typed_graph_shape_and_cleans_startup_failure[1500]",
+    "tests/unit_test/moss_speech/test_config.py::test_vocoder_factory_consumes_typed_graph_shape_and_cleans_startup_failure[None]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_vocoder_shutdown_releases_prepared_graph_and_request_state[False]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_vocoder_shutdown_releases_prepared_graph_and_request_state[True]"
+  ],
+  "C03-codec-cfm-graph": [
+    "tests/unit_test/moss_speech/test_codec.py::test_cfm_cuda_graph_matches_native_solver_and_preserves_owned_outputs",
+    "tests/unit_test/moss_speech/test_codec.py::test_cfm_graph_fullweights_streaming_pcm_and_cleanup",
+    "tests/unit_test/moss_speech/test_codec.py::test_chunk_mask_cuda_graph_replays_empty_row_repair_from_current_input"
+  ],
+  "C01-codec-fairness": [
+    "tests/unit_test/moss_speech/test_codec.py::test_codec_rejects_invalid_hop_budget_without_losing_session[-1]",
+    "tests/unit_test/moss_speech/test_codec.py::test_codec_rejects_invalid_hop_budget_without_losing_session[0]",
+    "tests/unit_test/moss_speech/test_codec.py::test_codec_rejects_invalid_hop_budget_without_losing_session[1.5]",
+    "tests/unit_test/moss_speech/test_codec.py::test_codec_rejects_invalid_hop_budget_without_losing_session[True]",
+    "tests/unit_test/moss_speech/test_config.py::test_codec_fairness_configuration_is_strict_bool[0]",
+    "tests/unit_test/moss_speech/test_config.py::test_codec_fairness_configuration_is_strict_bool[1]",
+    "tests/unit_test/moss_speech/test_config.py::test_codec_fairness_configuration_is_strict_bool[False]",
+    "tests/unit_test/moss_speech/test_config.py::test_codec_fairness_configuration_is_strict_bool[True]",
+    "tests/unit_test/moss_speech/test_config.py::test_codec_fairness_configuration_is_strict_bool[true]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_fair_codec_drops_audio_when_cancelled_during_decode",
+    "tests/unit_test/moss_speech/test_streaming.py::test_fair_codec_failure_aborts_only_failed_request",
+    "tests/unit_test/moss_speech/test_streaming.py::test_fair_codec_round_robin_and_final_tail[False-2]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_fair_codec_round_robin_and_final_tail[False-4]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_fair_codec_round_robin_and_final_tail[True-2]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_fair_codec_round_robin_and_final_tail[True-4]"
+  ],
+  "C03-codec-fairness": [
+    "tests/unit_test/moss_speech/test_codec.py::test_fair_codec_fullweights_round_robin_pcm_and_recovery"
+  ]
 }

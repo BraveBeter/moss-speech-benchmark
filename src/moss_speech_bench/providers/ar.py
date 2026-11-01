@@ -310,6 +310,10 @@ def run(
                     token_to_kv_pool=kv_pool,
                 )
             )
+            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-decode-graph":
+                from tests.unit_test.fixtures.moss_speech_model import assert_full_decode_graph
+
+                report["full_decode_graph"] = assert_full_decode_graph(model, capacity=1024)
             if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "context-prefill-graph":
                 from tests.unit_test.fixtures.moss_speech_model import assert_full_prefill_graph
 

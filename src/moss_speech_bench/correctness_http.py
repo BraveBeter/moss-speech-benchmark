@@ -105,6 +105,8 @@ def check(row, request, directory):
 
 
 async def run_http(gate, config, output):
+    if config.get("profile", "").startswith("context-"):
+        config = dict(config, context_remaining=True)
     output = Path(output)
     key = os.environ.get(config["api_key_env"]) if config.get("api_key_env") else None
     if config.get("api_key_env") and not key:
@@ -232,7 +234,7 @@ async def run_http(gate, config, output):
             ("invalid", invalid),
         ]:
             await logical(name, function)
-        if config.get("context_remaining") or config.get("profile", "").startswith("context-"):
+        if config.get("context_remaining"):
             probes = config["context_probes"]
             assert [p["prompt_tokens"] for p in probes] == [40959, 40960]
 
@@ -240,9 +242,7 @@ async def run_http(gate, config, output):
                 trials = [
                     (p, status, omitted)
                     for p, status in zip(probes, (200, 400))
-                    for omitted in (
-                        [False, True] if config["profile"] != "context-window" else [False]
-                    )
+                    for omitted in ([False, True] if config.get("context_remaining") else [False])
                 ]
                 for probe, expected_status, omitted in trials:
                     request = payload(config, limit=1)
@@ -281,7 +281,7 @@ async def run_http(gate, config, output):
                 )
 
             async def generation_boundary(target):
-                budget = 1001 if config["profile"] != "context-window" else 1000
+                budget = 1001 if config.get("context_remaining") else 1000
                 request = payload(config, target=target, stream=True, limit=budget)
                 request["messages"][0]["content"] = (
                     "请写一篇不少于两千字的科幻故事：一位宇航员在木星的卫星上发现了一座失落的城市。请直接开始写完整故事，详细描写探索的经过和人物对话，不要写提纲，不要总结任务。"
@@ -302,7 +302,7 @@ async def run_http(gate, config, output):
                 )
 
             async def over_generation():
-                budget = 40960 if config["profile"] != "context-window" else 1001
+                budget = 40960 if config.get("context_remaining") else 1001
                 request = payload(config, limit=budget)
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=config.get("timeout", 300))
@@ -343,25 +343,31 @@ async def run_http(gate, config, output):
                 )
 
             await logical("context-boundary", context_boundary)
-            budget = 1001 if config["profile"] != "context-window" else 1000
+            budget = 1001 if config.get("context_remaining") else 1000
             await logical(f"generation-{budget}-text", lambda: generation_boundary("text"))
             await logical(f"generation-{budget}-audio", lambda: generation_boundary("audio"))
             await logical(
                 "generation-over-context-rejected"
-                if config["profile"] != "context-window"
+                if config.get("context_remaining")
                 else "generation-1001-rejected",
                 over_generation,
             )
-            if config["profile"] != "context-window":
+            if config.get("context_remaining"):
                 await logical("omitted-eos-text", lambda: omitted_eos("text"))
                 await logical("omitted-eos-audio", lambda: omitted_eos("audio"))
     else:
-        for target, limit in [("text", 64), ("audio", 96)]:
+        groups = [("text", 64), ("audio", 96)]
+        if config.get("profile") == "mixed-modalities":
+            groups.append(("mixed", 96))
+        for target, limit in groups:
 
             async def concurrent(target=target, limit=limit):
                 requests = []
-                for color in ("red", "blue"):
-                    request = payload(config, target=target, limit=limit)
+                for index, color in enumerate(("red", "blue")):
+                    output_target = (
+                        ("text" if index == 0 else "audio") if target == "mixed" else target
+                    )
+                    request = payload(config, target=output_target, limit=limit)
                     request["messages"][0]["content"] = f"Reply with exactly one word: {color}."
                     requests.append(request)
                 serial = [await send(f"{target}-serial-{i}", r) for i, r in enumerate(requests)]
@@ -417,15 +423,10 @@ async def run_http(gate, config, output):
 
             await logical(target, concurrent)
     expected = (
-        (
-            26
-            if (config.get("context_remaining") or config.get("profile", "").startswith("context-"))
-            and config["profile"] != "context-window"
-            else 24
-            if config.get("profile") == "context-window"
-            else 20
-        )
+        (26 if config.get("context_remaining") else 20)
         if gate == "C07"
+        else 3
+        if config.get("profile") == "mixed-modalities"
         else 2
     )
     return dict(

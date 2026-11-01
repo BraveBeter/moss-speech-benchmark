@@ -37,13 +37,16 @@ async def correct_server(tmp_path):
             )
         if "min_p" in data:
             return web.json_response({"error": "min_p unsupported"}, status=400)
+        if state["active"] == 0:
+            state["overlap_seen"] = False
         state["active"] += 1
+        state["overlap_seen"] |= state["active"] > 1
         try:
             await asyncio.sleep(0.01)
             text = str(data["messages"])
             color = "blue" if "blue." in text else "red" if "red." in text else "water"
             code = 2 if color == "blue" else 1
-            if state["corrupt"] and state["active"] > 1:
+            if state["corrupt"] and state["overlap_seen"]:
                 code += 1
             audio = data["modalities"] == ["audio"]
             count = data.get("max_tokens") if data["stream"] and data.get("max_tokens") == 64 else 4
@@ -595,6 +598,8 @@ async def test_independent_candidate_admission_keeps_reference_and_resume_checks
     [
         ("C04", {"ar_graph": True}),
         ("C04", {"attention": "flashinfer"}),
+        ("C04", {"projection_graph_batch_size": 1}),
+        ("C04", {"mixed_modalities": True}),
         ("C06", {"codec_dtype": "bfloat16"}),
     ],
 )
@@ -623,17 +628,11 @@ async def test_uncovered_compute_path_never_runs_an_eager_fallback(
 @pytest.mark.parametrize(
     "profile",
     [
+        "ar-decode-graph",
         "context-remaining",
         "context-small-first",
         "context-startup-schedule",
         "context-prefill-graph",
-        "ar-prefix-cache",
-        "ar-sampling-history",
-        "ar-host-metadata",
-        "codec-cfm-graph",
-        "codec-fairness",
-        "codec-score-release",
-        "direct-lt",
     ],
 )
 async def test_remaining_budget_http_requires_omission_eos_and_over_1000(
@@ -645,7 +644,7 @@ async def test_remaining_budget_http_requires_omission_eos_and_over_1000(
     write_json(probe, dict(messages=[dict(role="user", content="long text")], modalities=["text"]))
     config.update(
         profile=profile,
-        context_remaining=True,
+        context_remaining=profile == "ar-decode-graph",
         long_text_request=str(probe),
         context_probes=[
             dict(text="fits", prompt_tokens=40959),
@@ -659,6 +658,61 @@ async def test_remaining_budget_http_requires_omission_eos_and_over_1000(
     checks = {row["id"]: row for row in result["checks"]}
     assert checks["generation-1001-audio"]["detail"]["completion_tokens"] == 1001
     assert checks["omitted-eos-text"]["detail"]["finish_reason"] == "stop"
+    config["context_probes"][0]["text"] = "overflow"
+    rejected = await run_http("C07", config, tmp_path / "broken-boundary")
+    assert rejected["status"] == "fail"
+    assert next(r for r in rejected["checks"] if r["id"] == "context-boundary")["status"] == "fail"
+
+
+@pytest.mark.parametrize(
+    "profile",
+    ["hf-reference", "ar-decode-graph", "ar-projection-graph", "mixed-modalities", "native-norm"],
+)
+def test_candidate_profiles_compose_remaining_context_selection(tmp_path, profile):
+    from moss_speech_bench.correctness import PROVIDERS, load_suite
+    from moss_speech_bench.providers.selection import expected_tests
+
+    config = dict(
+        profile=profile, core_sha=CANDIDATE_SHA, workspace_root=".", context_remaining=True
+    )
+    if profile == "native-norm":
+        config["native_norm_library"] = "/explicit/library.so"
+    if profile == "ar-projection-graph":
+        config["projection_graph_batch_size"] = 1
+    path = tmp_path / "suite.json"
+    write_json(path, config)
+    assert load_suite(path)["context_remaining"] is True
+    selection = read_json(PROVIDERS / "selection.json")
+    expected = expected_tests(selection, "C01", profile, True)
+    assert len(expected) == len(set(expected))
+    assert not any("context_limit-513" in n for n in expected)
+    assert all(n in expected for n in selection["C01-context-remaining"])
+    if profile == "mixed-modalities":
+        assert len(expected) == 550
+        assert any("placement_budget[enabled]" in n for n in expected)
+    if profile == "ar-projection-graph":
+        assert len(expected) == 549
+        assert len(expected_tests(selection, "C03", profile, True)) == 7
+    if profile == "ar-decode-graph":
+        assert len(expected) == 536
+        assert len(expected_tests(selection, "C03", profile, True)) == 4
+    config["context_remaining"] = "true"
+    write_json(path, config)
+    with pytest.raises(ValueError, match="boolean"):
+        load_suite(path)
+
+
+async def test_mixed_http_checks_actual_overlap_and_keeps_both_outputs(correct_server, tmp_path):
+    config, state = correct_server
+    config["profile"] = "mixed-modalities"
+    result = await run_http("C08", config, tmp_path / "mixed")
+    assert result["status"] == "pass" and result["expected"] == 3
+    assert result["http_attempts"] == 12
+    checks = {row["id"]: row for row in result["checks"]}
+    assert checks["mixed"]["detail"]["overlap_s"] > 0
+    state["corrupt"] = True
+    broken = await run_http("C08", config, tmp_path / "corrupt-mixed")
+    assert next(r for r in broken["checks"] if r["id"] == "mixed")["status"] == "fail"
 
 
 @pytest.mark.parametrize(
@@ -741,6 +795,77 @@ def test_context_admission_keeps_arbitrary_git_and_rejects_wrong_capacity_or_str
         preflight(config)
 
 
+def test_p4_suite_keeps_legacy_and_context_regressions():
+    from moss_speech_bench.correctness import PROVIDERS
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    frozen = read_json(PROVIDERS / "selection.json")
+    assert selected_nodes("C01", "hf-reference") == frozen["C01"]
+    assert selected_nodes("C03", "hf-reference") == frozen["C03"]
+    assert len(selected_nodes("C01", "context-remaining")) == 536
+    with pytest.raises(ValueError, match="test suite"):
+        selected_nodes("C01", "context-remaining", test_suite="unknown")
+    with pytest.raises(ValueError, match="context-remaining"):
+        selected_nodes("C01", "hf-reference", test_suite="p4-16")
+
+
+@pytest.mark.parametrize(
+    "suite,cpu_count,cuda_count",
+    [("p4-15", 545, 3), ("p4-16", 540, 9), ("p4-17", 536, 4), ("p4-18", 539, 4)],
+)
+def test_p4_selection_retains_exact_strategy_and_context_nodes(suite, cpu_count, cuda_count):
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    cpu = selected_nodes("C01", "context-remaining", test_suite=suite)
+    cuda = selected_nodes("C03", "context-remaining", test_suite=suite)
+    assert len(cpu) == len(set(cpu)) == cpu_count
+    assert len(cuda) == len(set(cuda)) == cuda_count
+    assert not set(cpu) & set(cuda)
+    assert any("40960" in node for node in cpu)
+    if suite == "p4-16":
+        assert any("rng_draw_order[False-False-cpu]" in node for node in cpu)
+        assert any("rng_draw_order[False-False-cuda]" in node for node in cuda)
+        assert any("scalar_sampling_fallback" in node for node in cpu)
+        assert any("scalar_sampling_fallback" in node for node in cuda)
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "ar-prefix-cache",
+        "ar-sampling-history",
+        "ar-host-metadata",
+        "codec-cfm-graph",
+        "codec-fairness",
+        "codec-score-release",
+        "direct-lt",
+    ],
+)
+async def test_p3_remaining_budget_http_requires_omission_eos_and_over_1000(
+    correct_server, tmp_path, profile
+):
+    config, state = correct_server
+    state.update(context=True, remaining=True)
+    probe = tmp_path / "long-text.json"
+    write_json(probe, dict(messages=[dict(role="user", content="long text")], modalities=["text"]))
+    config.update(
+        profile=profile,
+        context_remaining=True,
+        long_text_request=str(probe),
+        context_probes=[
+            dict(text="fits", prompt_tokens=40959),
+            dict(text="overflow", prompt_tokens=40960),
+        ],
+    )
+    result = await run_http("C07", config, tmp_path / "remaining")
+    assert result["status"] == "pass", result
+    assert result["expected"] == len(result["checks"]) == 26
+    assert result["http_attempts"] == 33
+    checks = {row["id"]: row for row in result["checks"]}
+    assert checks["generation-1001-audio"]["detail"]["completion_tokens"] == 1001
+    assert checks["omitted-eos-text"]["detail"]["finish_reason"] == "stop"
+
+
 @pytest.mark.parametrize(
     "profile,flag",
     [
@@ -796,6 +921,8 @@ def test_p3_selector_preserves_context_remaining_and_independent_profile():
         ("ar-host-metadata", 548, 6),
         ("direct-lt", 537, 5),
         ("codec-score-release", 538, 3),
+        ("codec-cfm-graph", 554, 6),
+        ("codec-fairness", 551, 4),
     ],
 )
 def test_p3_exact_collected_selection_counts(profile, cpu, cuda):

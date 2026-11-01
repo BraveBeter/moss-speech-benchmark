@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
-from .providers.selection import selected_nodes
+from .providers.selection import expected_tests, selected_nodes
 from .storage import digest, read_json, source_identity, write_json
 
 GATES = tuple("C%02d" % i for i in range(9))
@@ -69,7 +69,13 @@ def load_suite(path):
     elif profile == "direct-lt":
         if not config.get("direct_lt_library") or config.get("native_norm_library"):
             raise ValueError("direct-lt requires its explicit library without other native paths")
-    elif profile in ("hf-reference", "eager-base"):
+    elif profile in (
+        "hf-reference",
+        "eager-base",
+        "ar-decode-graph",
+        "ar-projection-graph",
+        "mixed-modalities",
+    ):
         # eager-base is a legacy spelling of the reference compute adapter, not a Git pin.
         if config.get("native_norm_library") is not None:
             raise ValueError("Use the native-norm profile to qualify a native norm library")
@@ -98,6 +104,14 @@ def load_suite(path):
         raise ValueError("Native norm requires its explicit profile")
     if config.get("direct_lt_library") and profile != "direct-lt":
         raise ValueError("Native DirectLt requires its explicit profile")
+    if profile == "ar-projection-graph" and (
+        type(config.get("projection_graph_batch_size")) is not int
+        or not 1 <= config["projection_graph_batch_size"] <= 4
+    ):
+        raise ValueError("Projection graph profile requires batch size1..4")
+    selected_nodes(
+        "C01", profile, config.get("context_remaining", False), config.get("test_suite", "legacy")
+    )
     return config
 
 
@@ -132,13 +146,10 @@ def preflight(config):
     assert all(Path(p).exists() for p in required)
     for name in ("audio_en", "audio_zh", "voice_wav", "code_profile"):
         assert Path(config[name]).resolve() in listed, "Unpinned input: " + name
-    if config.get("context_remaining"):
+    if config.get("context_remaining") or config["profile"].startswith("context-"):
         probe = Path(config["long_text_request"]).resolve()
-        assert probe in listed and read_json(probe)["modalities"] == ["text"], (
-            "Unpinned long text probe"
-        )
-        assert config["deployment"].get("context_limit") == 40960
-        assert config["deployment"].get("max_total_tokens") == 40962
+        assert probe in listed, "Unpinned long text generation request"
+        assert read_json(probe)["modalities"] == ["text"]
     if config["profile"] == "direct-lt":
         library = Path(config["direct_lt_library"]).resolve()
         assert library in listed, "Unpinned DirectLt library"
@@ -192,6 +203,23 @@ def preflight(config):
         assert config["deployment"].get("native_norm_library_sha256") == file_hash(library)
     deployment = config.get("deployment", {})
     assert deployment.get("core_sha") == config["core_sha"], "Deployment candidate SHA mismatch"
+    if config["profile"] in ("ar-decode-graph", "ar-projection-graph", "mixed-modalities"):
+        assert deployment.get("ar_graph") is (config["profile"] == "ar-decode-graph")
+    if config["profile"] == "ar-projection-graph":
+        assert (
+            deployment.get("projection_graph_batch_size") == config["projection_graph_batch_size"]
+        )
+    if config["profile"] == "mixed-modalities":
+        assert deployment.get("mixed_modalities") is True
+    if config.get("context_remaining") or config["profile"].startswith("context-"):
+        assert all(
+            deployment.get(k) == v
+            for k, v in {
+                "context_limit": 40960,
+                "context_length": 40960,
+                "max_total_tokens": 40962,
+            }.items()
+        ), "Remaining-context deployment differs from declared full window capacity"
     gpu_count = deployment.get("gpu_count")
     assert type(gpu_count) is int and gpu_count > 0, "Invalid deployment GPU count"
     assert deployment.get("voice_sha256") == file_hash(config["voice_wav"])
@@ -201,12 +229,6 @@ def preflight(config):
         "Deployment placement is outside allocated devices"
     )
     if config["profile"].startswith("context-"):
-        assert all(
-            deployment.get(k) == v
-            for k, v in dict(
-                context_limit=40960, context_length=40960, max_total_tokens=40962
-            ).items()
-        ), "Context deployment differs from qualified capacity"
         assert deployment.get("small_first_chunk", False) is (
             config["profile"] == "context-small-first"
         )
@@ -298,13 +320,29 @@ async def provider(gate, config, output):
             "ar_dtype": "bfloat16",
             "attention": "torch_native",
             "ar_tp": 1,
-            "ar_graph": config["profile"] == "context-prefill-graph",
+            "ar_graph": config["profile"] in ("ar-decode-graph", "context-prefill-graph"),
         }
         if gate == "C04"
         else {"codec_dtype": "float32"}
         if gate in ("C05", "C06")
         else {}
     )
+    if gate == "C04":
+        for key, expected, default in (
+            (
+                "projection_graph_batch_size",
+                config.get("projection_graph_batch_size")
+                if config["profile"] == "ar-projection-graph"
+                else None,
+                None,
+            ),
+            ("mixed_modalities", config["profile"] == "mixed-modalities", False),
+        ):
+            if config.get("deployment", {}).get(key, default) != expected:
+                return dict(
+                    status="unsupported",
+                    reason=f"C04 adapter does not cover the declared compute path: {key}",
+                )
     differences = {
         key: {"declared": config.get("deployment", {}).get(key), "supported": value}
         for key, value in supported.items()
@@ -329,8 +367,11 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_CORRECTNESS_TEST_SUITE=config.get("test_suite", "legacy"),
+        MOSS_CONTEXT_REMAINING="1"
+        if config.get("context_remaining") or config["profile"].startswith("context-")
+        else "0",
         MOSS_AR_PREFILL_LENGTHS=json.dumps(config.get("graph_lengths", [])),
-        MOSS_CONTEXT_REMAINING="1" if config.get("context_remaining") else "0",
         MOSS_ENCODER_GOLDEN=config["golden"]["C05"]["tensors"],
         MOSS_CODEC_GOLDEN=config["golden"]["C06"]["report"],
         MOSS_CODEC_GOLDEN_TENSORS=config["golden"]["C06"]["tensors"],
@@ -416,7 +457,14 @@ async def provider(gate, config, output):
     assert read_json(output / "origins.json"), "Provider import origins missing"
     if gate in ("C01", "C03"):
         report = read_json(output / "coverage.json")
-        expected = selected_nodes(gate, config["profile"], config.get("context_remaining", False))
+        selection = read_json(PROVIDERS / "selection.json")
+        expected = expected_tests(
+            selection,
+            gate,
+            config["profile"],
+            config.get("context_remaining", False),
+            config.get("test_suite", "legacy"),
+        )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
         )
@@ -429,6 +477,10 @@ async def provider(gate, config, output):
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
         )
+    if gate == "C04" and config["profile"] == "ar-decode-graph":
+        graph = read_json(output / filenames[gate])["full_decode_graph"]
+        assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
+        assert graph["complete_heads_exact"] is True
     if gate == "C04" and config["profile"] == "context-prefill-graph":
         graph = read_json(output / filenames[gate])["full_prefill_graph"]
         assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
