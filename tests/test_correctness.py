@@ -964,6 +964,7 @@ def test_p3_preflight_rejects_every_mismatched_context_capacity(pinned_candidate
         preflight(config)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Provider sessions require POSIX process groups")
 @pytest.mark.parametrize("ignore_term", [False, True])
 async def test_cli_sigterm_reaps_independent_provider_session(tmp_path, ignore_term):
     """Terminating the CLI must not strand its separate-session correctness worker."""

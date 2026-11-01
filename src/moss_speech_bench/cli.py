@@ -403,12 +403,14 @@ def main(argv=None):
     async def execute():
         loop = asyncio.get_running_loop()
         task = asyncio.current_task()
-        previous_handler = signal.getsignal(signal.SIGTERM)
-        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+
+        def interrupt(signum, frame):
+            loop.call_soon_threadsafe(task.cancel)
+
+        previous_handler = signal.signal(signal.SIGTERM, interrupt)
         try:
             return await run(args)
         finally:
-            loop.remove_signal_handler(signal.SIGTERM)
             signal.signal(signal.SIGTERM, previous_handler)
 
     try:
