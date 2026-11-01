@@ -47,6 +47,20 @@ full output tensors. No trimming, padding, NaN equality or post-failure toleranc
 adjustment is allowed. Codec CFM seed 42 and original deterministic/cuDNN state
 checks remain in the provider.
 
+## New eager-base optimization qualification
+
+Set `context_remaining: true` independently of the compute `profile` to qualify the 40,960-row context and remaining default generation budget. C01 keeps the frozen base allowlist, replaces the obsolete 513-row rejection with 40961, and adds the 22 existing context/default/stream regression cases. C02 constructs exact 40959/40960 canonical prompts. C07 requires 26 logical checks, including explicit/omitted context admission, 1001-row text and audio, context-overflow rejection/recovery, omitted text EOS and null audio EOS. Pin `long_text_request` in the full-hash asset allowlist; all boundary requests and responses are retained.
+
+| Compute profile | Extra qualification | C01 / C03 with context_remaining |
+|---|---|---|
+| hf-reference | Original HF and native CUDA checks | 536 / 3 |
+| ar-decode-graph | Target fixture checks actual full-checkpoint capture/replay, both complete heads and all40 KV layers, plus tiny-model CUDA lifecycle/fallback | 536 / 4 |
+| ar-projection-graph | Explicit projection_graph_batch_size1..4; CPU arithmetic/config/cleanup and four actual CUDA batch profiles with complete model/KV equality | 549 / 7 |
+| mixed-modalities | Typed opt-in and lifecycle/cancel isolation; actual mixed CUDA batch model/KV checks; C08 additionally compares mixed text/audio serial vs overlapping calls | 550 / 4 |
+| native-norm | Explicit pinned library and native-rounding/fallback fixture | 537 / 4 |
+
+Deployment must declare the corresponding `ar_graph`, `projection_graph_batch_size` or `mixed_modalities` setting; a mismatched or unqualified compute profile is rejected rather than silently covered by eager results. Projection HF prefill remains eager by design, with replay correctness separately established in C03. Server-side activation evidence is still required to show that the measured deployment used Graph/native/mixed admission: HTTP overlap alone does not establish an engine batch, and the client does not infer server counters from its local checkout. These additions do not change numerical tolerances, reference goldens or named Quick workloads.
+
 ## Configure and run
 
 Use [examples/correctness.json](examples/correctness.json). Its workspace root

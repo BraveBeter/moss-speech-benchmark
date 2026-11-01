@@ -213,6 +213,26 @@ def compare_core(reference: dict, result: dict) -> None:
         for record in result["left_padding_comparisons"].values()
         for key in ("grid", "mask")
     )
+    if os.environ.get("MOSS_CONTEXT_REMAINING") == "1":
+        probes = []
+        for target_length in (40959, 40960):
+            repetitions = target_length
+            for attempt in range(5):
+                text = " hello" * repetitions
+                turns = [dict(role="user", kind="text", text=text)]
+                canonical = processor.build(turns, [], "text")
+                if canonical.prompt_len == target_length:
+                    break
+                repetitions += target_length - canonical.prompt_len
+            assert canonical.prompt_len == target_length, "Cannot construct exact context probe"
+            probes.append(
+                dict(
+                    text=text,
+                    prompt_tokens=canonical.prompt_len,
+                    text_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                )
+            )
+        result["context_probes"] = probes
     result["comparison_count"] = len(checks)
     result["failed_comparison_count"] = sum(not check["equal"] for check in checks)
     result["samples_unchanged"] = all(

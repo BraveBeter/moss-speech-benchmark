@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
+from .providers.selection import expected_tests
 from .storage import digest, read_json, source_identity, write_json
 
 GATES = tuple("C%02d" % i for i in range(9))
@@ -42,7 +43,13 @@ def load_suite(path):
     if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
         raise ValueError("Correctness requires an explicit full candidate SHA")
     profile = config.get("profile")
-    if profile in ("hf-reference", "eager-base"):
+    if profile in (
+        "hf-reference",
+        "eager-base",
+        "ar-decode-graph",
+        "ar-projection-graph",
+        "mixed-modalities",
+    ):
         # eager-base is a legacy spelling of the reference compute adapter, not a Git pin.
         if config.get("native_norm_library") is not None:
             raise ValueError("Use the native-norm profile to qualify a native norm library")
@@ -54,6 +61,13 @@ def load_suite(path):
             raise ValueError("native-norm requires an explicit native library")
     else:
         raise ValueError("Unknown correctness profile")
+    if type(config.get("context_remaining", False)) is not bool:
+        raise ValueError("context_remaining must be a boolean")
+    if profile == "ar-projection-graph" and (
+        type(config.get("projection_graph_batch_size")) is not int
+        or not 1 <= config["projection_graph_batch_size"] <= 4
+    ):
+        raise ValueError("Projection graph profile requires batch size1..4")
     return config
 
 
@@ -80,6 +94,10 @@ def preflight(config):
     assert all(Path(p).exists() for p in required)
     for name in ("audio_en", "audio_zh", "voice_wav", "code_profile"):
         assert Path(config[name]).resolve() in listed, "Unpinned input: " + name
+    if config.get("context_remaining"):
+        probe = Path(config["long_text_request"]).resolve()
+        assert probe in listed, "Unpinned long text generation request"
+        assert read_json(probe)["modalities"] == ["text"]
     for gate in ("C02", "C04", "C05", "C06"):
         golden = config["golden"][gate]
         assert all(Path(p).resolve() in listed for p in golden.values()), "Unpinned golden"
@@ -129,6 +147,23 @@ def preflight(config):
         assert config["deployment"].get("native_norm_library_sha256") == file_hash(library)
     deployment = config.get("deployment", {})
     assert deployment.get("core_sha") == config["core_sha"], "Deployment candidate SHA mismatch"
+    if config["profile"] in ("ar-decode-graph", "ar-projection-graph", "mixed-modalities"):
+        assert deployment.get("ar_graph") is (config["profile"] == "ar-decode-graph")
+    if config["profile"] == "ar-projection-graph":
+        assert (
+            deployment.get("projection_graph_batch_size") == config["projection_graph_batch_size"]
+        )
+    if config["profile"] == "mixed-modalities":
+        assert deployment.get("mixed_modalities") is True
+    if config.get("context_remaining"):
+        assert all(
+            deployment.get(k) == v
+            for k, v in {
+                "context_limit": 40960,
+                "context_length": 40960,
+                "max_total_tokens": 40962,
+            }.items()
+        ), "Remaining-context deployment differs from declared full window"
     gpu_count = deployment.get("gpu_count")
     assert type(gpu_count) is int and gpu_count > 0, "Invalid deployment GPU count"
     assert deployment.get("voice_sha256") == file_hash(config["voice_wav"])
@@ -212,12 +247,33 @@ def numerical_checks(gate, report, golden):
 async def provider(gate, config, output):
     # These adapters compare the declared candidate path, never a silent eager fallback.
     supported = (
-        {"ar_dtype": "bfloat16", "attention": "torch_native", "ar_tp": 1, "ar_graph": False}
+        {
+            "ar_dtype": "bfloat16",
+            "attention": "torch_native",
+            "ar_tp": 1,
+            "ar_graph": config["profile"] == "ar-decode-graph",
+        }
         if gate == "C04"
         else {"codec_dtype": "float32"}
         if gate in ("C05", "C06")
         else {}
     )
+    if gate == "C04":
+        for key, expected, default in (
+            (
+                "projection_graph_batch_size",
+                config.get("projection_graph_batch_size")
+                if config["profile"] == "ar-projection-graph"
+                else None,
+                None,
+            ),
+            ("mixed_modalities", config["profile"] == "mixed-modalities", False),
+        ):
+            if config.get("deployment", {}).get(key, default) != expected:
+                return dict(
+                    status="unsupported",
+                    reason=f"C04 adapter does not cover the declared compute path: {key}",
+                )
     differences = {
         key: {"declared": config.get("deployment", {}).get(key), "supported": value}
         for key, value in supported.items()
@@ -242,6 +298,7 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_CONTEXT_REMAINING="1" if config.get("context_remaining") else "0",
         MOSS_NATIVE_NORM_LIBRARY=config.get("native_norm_library", ""),
         MOSS_NATIVE_TAIL_SOURCE=config.get("native_tail_source", ""),
         MOSS_NATIVE_TAIL_ABI=config.get("native_tail_abi", ""),
@@ -323,8 +380,8 @@ async def provider(gate, config, output):
     if gate in ("C01", "C03"):
         report = read_json(output / "coverage.json")
         selection = read_json(PROVIDERS / "selection.json")
-        expected = selection[gate] + (
-            selection[gate + "-native-norm"] if config["profile"] == "native-norm" else []
+        expected = expected_tests(
+            selection, gate, config["profile"], config.get("context_remaining", False)
         )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
@@ -338,6 +395,10 @@ async def provider(gate, config, output):
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
         )
+    if gate == "C04" and config["profile"] == "ar-decode-graph":
+        graph = read_json(output / filenames[gate])["full_decode_graph"]
+        assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
+        assert graph["complete_heads_exact"] is True
     if gate == "C03" and config["profile"] == "native-tail-research":
         research = read_json(output / "native-tail-research.json")
         assert research["status"] == "unsupported" and research["total_cases"] == 32
@@ -451,7 +512,15 @@ async def run_correctness(path, output, selected=None, resume=False):
                 if gate == "C00":
                     result = preflight(config)
                 elif gate in ("C07", "C08"):
-                    result = await run_http(gate, config, folder)
+                    http_config = dict(config)
+                    if gate == "C07" and config.get("context_remaining"):
+                        artifacts = suite["gates"]["C02"]["artifacts"]
+                        probe_report = next(k for k in artifacts if k.endswith("/processor.json"))
+                        assert file_hash(output / probe_report) == artifacts[probe_report]
+                        http_config["context_probes"] = read_json(output / probe_report)[
+                            "context_probes"
+                        ]
+                    result = await run_http(gate, http_config, folder)
                 else:
                     result = await provider(gate, config, folder)
                 suite["gates"][gate] = result

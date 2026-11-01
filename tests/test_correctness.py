@@ -27,21 +27,44 @@ async def correct_server(tmp_path):
     async def handle(request):
         data = await request.json()
         state["calls"] += 1
+        if state.get("context") and not state.get("remaining") and data.get("max_tokens") == 1001:
+            return web.json_response({"error": "maximum 1000"}, status=400)
+        if state.get("context") and data["messages"][0]["content"] == "overflow":
+            return web.json_response({"error": "context exceeds 40960"}, status=400)
+        if state.get("remaining") and data.get("max_tokens") == 40960:
+            return web.json_response(
+                {"error": "max_new_tokens must be within [1, 40959]"}, status=400
+            )
         if "min_p" in data:
             return web.json_response({"error": "min_p unsupported"}, status=400)
+        if state["active"] == 0:
+            state["overlap_seen"] = False
         state["active"] += 1
+        state["overlap_seen"] |= state["active"] > 1
         try:
             await asyncio.sleep(0.01)
             text = str(data["messages"])
             color = "blue" if "blue." in text else "red" if "red." in text else "water"
             code = 2 if color == "blue" else 1
-            if state["corrupt"] and state["active"] > 1:
+            if state["corrupt"] and state["overlap_seen"]:
                 code += 1
             audio = data["modalities"] == ["audio"]
-            count = data["max_tokens"] if data["stream"] and data["max_tokens"] == 64 else 4
+            count = data.get("max_tokens") if data["stream"] and data.get("max_tokens") == 64 else 4
+            if state.get("context") and data.get("max_tokens") in (1, 1000):
+                count = data.get("max_tokens")
+            if state.get("remaining"):
+                count = (
+                    1001
+                    if data.get("max_tokens") == 1001
+                    else 1
+                    if data["messages"][0]["content"] == "fits"
+                    else count
+                )
             pcm = (code.to_bytes(2, "little")) * (1920 * count)
             usage = dict(prompt_tokens=5, completion_tokens=count, total_tokens=5 + count)
-            finish = "length" if count == 64 else "stop"
+            if state.get("context") and data["messages"][0]["content"] == "fits":
+                usage = dict(prompt_tokens=40959, completion_tokens=1, total_tokens=40960)
+            finish = "length" if count in (1, 64, 1000, 1001) else "stop"
             if not data["stream"]:
                 message = {"content": "" if audio else color}
                 if audio:
@@ -575,6 +598,8 @@ async def test_independent_candidate_admission_keeps_reference_and_resume_checks
     [
         ("C04", {"ar_graph": True}),
         ("C04", {"attention": "flashinfer"}),
+        ("C04", {"projection_graph_batch_size": 1}),
+        ("C04", {"mixed_modalities": True}),
         ("C06", {"codec_dtype": "bfloat16"}),
     ],
 )
@@ -598,3 +623,81 @@ async def test_uncovered_compute_path_never_runs_an_eager_fallback(
     assert "declared compute path" in result["gates"][gate]["reason"]
     assert result["gates"]["C07"]["status"] == "not_run"
     assert result["status"] == "incomplete"
+
+
+async def test_remaining_budget_http_requires_omission_eos_and_over_1000(correct_server, tmp_path):
+    config, state = correct_server
+    state.update(context=True, remaining=True)
+    probe = tmp_path / "long-text.json"
+    write_json(probe, dict(messages=[dict(role="user", content="long text")], modalities=["text"]))
+    config.update(
+        profile="ar-decode-graph",
+        context_remaining=True,
+        long_text_request=str(probe),
+        context_probes=[
+            dict(text="fits", prompt_tokens=40959),
+            dict(text="overflow", prompt_tokens=40960),
+        ],
+    )
+    result = await run_http("C07", config, tmp_path / "remaining")
+    assert result["status"] == "pass", result
+    assert result["expected"] == len(result["checks"]) == 26
+    assert result["http_attempts"] == 33
+    checks = {row["id"]: row for row in result["checks"]}
+    assert checks["generation-1001-audio"]["detail"]["completion_tokens"] == 1001
+    assert checks["omitted-eos-text"]["detail"]["finish_reason"] == "stop"
+    config["context_probes"][0]["text"] = "overflow"
+    rejected = await run_http("C07", config, tmp_path / "broken-boundary")
+    assert rejected["status"] == "fail"
+    assert next(r for r in rejected["checks"] if r["id"] == "context-boundary")["status"] == "fail"
+
+
+@pytest.mark.parametrize(
+    "profile",
+    ["hf-reference", "ar-decode-graph", "ar-projection-graph", "mixed-modalities", "native-norm"],
+)
+def test_candidate_profiles_compose_remaining_context_selection(tmp_path, profile):
+    from moss_speech_bench.correctness import PROVIDERS, load_suite
+    from moss_speech_bench.providers.selection import expected_tests
+
+    config = dict(
+        profile=profile, core_sha=CANDIDATE_SHA, workspace_root=".", context_remaining=True
+    )
+    if profile == "native-norm":
+        config["native_norm_library"] = "/explicit/library.so"
+    if profile == "ar-projection-graph":
+        config["projection_graph_batch_size"] = 1
+    path = tmp_path / "suite.json"
+    write_json(path, config)
+    assert load_suite(path)["context_remaining"] is True
+    selection = read_json(PROVIDERS / "selection.json")
+    expected = expected_tests(selection, "C01", profile, True)
+    assert len(expected) == len(set(expected))
+    assert not any("context_limit-513" in n for n in expected)
+    assert all(n in expected for n in selection["C01-context-remaining"])
+    if profile == "mixed-modalities":
+        assert len(expected) == 550
+        assert any("placement_budget[enabled]" in n for n in expected)
+    if profile == "ar-projection-graph":
+        assert len(expected) == 549
+        assert len(expected_tests(selection, "C03", profile, True)) == 7
+    if profile == "ar-decode-graph":
+        assert len(expected) == 536
+        assert len(expected_tests(selection, "C03", profile, True)) == 4
+    config["context_remaining"] = "true"
+    write_json(path, config)
+    with pytest.raises(ValueError, match="boolean"):
+        load_suite(path)
+
+
+async def test_mixed_http_checks_actual_overlap_and_keeps_both_outputs(correct_server, tmp_path):
+    config, state = correct_server
+    config["profile"] = "mixed-modalities"
+    result = await run_http("C08", config, tmp_path / "mixed")
+    assert result["status"] == "pass" and result["expected"] == 3
+    assert result["http_attempts"] == 12
+    checks = {row["id"]: row for row in result["checks"]}
+    assert checks["mixed"]["detail"]["overlap_s"] > 0
+    state["corrupt"] = True
+    broken = await run_http("C08", config, tmp_path / "corrupt-mixed")
+    assert next(r for r in broken["checks"] if r["id"] == "mixed")["status"] == "fail"
