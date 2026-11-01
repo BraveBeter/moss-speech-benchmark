@@ -12,6 +12,7 @@ import aiohttp
 import numpy as np
 
 from .client import ChatClient, sse_events
+from .providers.ar_combination import features
 from .storage import read_json, read_jsonl, write_json
 
 PROMPTS = {
@@ -357,7 +358,7 @@ async def run_http(gate, config, output):
                 await logical("omitted-eos-audio", lambda: omitted_eos("audio"))
     else:
         groups = [("text", 64), ("audio", 96)]
-        if config.get("profile") == "mixed-modalities":
+        if "mixed-modalities" in features(config):
             groups.append(("mixed", 96))
         for target, limit in groups:
 
@@ -426,7 +427,7 @@ async def run_http(gate, config, output):
         (26 if config.get("context_remaining") else 20)
         if gate == "C07"
         else 3
-        if config.get("profile") == "mixed-modalities"
+        if "mixed-modalities" in features(config)
         else 2
     )
     return dict(

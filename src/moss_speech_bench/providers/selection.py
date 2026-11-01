@@ -4,7 +4,47 @@ import json
 from pathlib import Path
 
 
-def expected_tests(selection, gate, profile, context_remaining=False, test_suite="legacy"):
+def expected_tests(
+    selection, gate, profile, context_remaining=False, test_suite="legacy", optimizations=()
+):
+    if profile == "ar-combination":
+        strategies = selection["ar-combination-strategies"]
+        if (
+            not optimizations
+            or len(optimizations) != len(set(optimizations))
+            or not set(optimizations) <= set(strategies)
+        ):
+            raise ValueError("Missing, unknown or duplicate AR combination strategies")
+        expected = expected_tests(selection, gate, "hf-reference", context_remaining)
+        replacements = {}
+        for feature in strategies:
+            for old, new in selection.get(gate + "-" + feature + "-replacements", {}).items():
+                if old in replacements and replacements[old] != new:
+                    override = selection.get(gate + "-ar-combination-replacements", {}).get(old)
+                    if override is None:
+                        raise ValueError("Conflicting strategy replacement: " + old)
+                    replacements[old] = override
+                else:
+                    replacements[old] = new
+        replacements.update(selection.get(gate + "-ar-combination-replacements", {}))
+        for old, new in replacements.items():
+            if old not in expected:
+                raise ValueError("Combination replaces an absent fixed node")
+            index = expected.index(old)
+            expected[index : index + 1] = new if isinstance(new, list) else [new]
+        for feature in optimizations:
+            base = set(selection[gate])
+            for node in selection.get(gate + "-" + feature, []):
+                mapped = selection.get(gate + "-ar-combination-node-replacements", {}).get(
+                    node, node
+                )
+                for actual in mapped if isinstance(mapped, list) else [mapped]:
+                    if actual not in base and actual not in expected:
+                        expected.append(actual)
+        expected += selection.get(gate + "-ar-combination", [])
+        if len(expected) != len(set(expected)):
+            raise ValueError("Duplicate combination correctness node IDs")
+        return expected
     expected = list(selection[gate])
     if (context_remaining or profile.startswith("context-")) and gate == "C01":
         expected = [selection["context-window-replacements"].get(n, n) for n in expected]
@@ -55,6 +95,6 @@ def expected_tests(selection, gate, profile, context_remaining=False, test_suite
     return expected
 
 
-def selected_nodes(gate, profile, context_remaining=False, test_suite="legacy"):
+def selected_nodes(gate, profile, context_remaining=False, test_suite="legacy", optimizations=()):
     selection = json.loads(Path(__file__).with_name("selection.json").read_text())
-    return expected_tests(selection, gate, profile, context_remaining, test_suite)
+    return expected_tests(selection, gate, profile, context_remaining, test_suite, optimizations)

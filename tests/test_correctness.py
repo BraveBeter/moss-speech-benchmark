@@ -705,9 +705,14 @@ def test_candidate_profiles_compose_remaining_context_selection(tmp_path, profil
         load_suite(path)
 
 
-async def test_mixed_http_checks_actual_overlap_and_keeps_both_outputs(correct_server, tmp_path):
+@pytest.mark.parametrize("profile", ["mixed-modalities", "ar-combination"])
+async def test_mixed_http_checks_actual_overlap_and_keeps_both_outputs(
+    correct_server, tmp_path, profile
+):
     config, state = correct_server
-    config["profile"] = "mixed-modalities"
+    config["profile"] = profile
+    if profile == "ar-combination":
+        config["ar_optimizations"] = ["mixed-modalities"]
     result = await run_http("C08", config, tmp_path / "mixed")
     assert result["status"] == "pass" and result["expected"] == 3
     assert result["http_attempts"] == 12

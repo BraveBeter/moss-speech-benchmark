@@ -911,5 +911,34 @@
   ],
   "C03-codec-fairness": [
     "tests/unit_test/moss_speech/test_codec.py::test_fair_codec_fullweights_round_robin_pcm_and_recovery"
-  ]
+  ],
+  "C03-ar-combination": [
+    "tests/unit_test/moss_speech/test_model.py::test_ar_combination_cuda_preserves_complete_heads_and_kv[1]",
+    "tests/unit_test/moss_speech/test_model.py::test_ar_combination_cuda_preserves_complete_heads_and_kv[4]"
+  ],
+  "ar-combination-strategies": [
+    "ar-decode-graph",
+    "ar-projection-graph",
+    "context-prefill-graph",
+    "native-norm",
+    "ar-host-metadata",
+    "mixed-modalities"
+  ],
+  "C01-ar-combination-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget": [
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[default-False]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[default-True]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[disabled-False]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[disabled-True]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[enabled-False]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[enabled-True]"
+    ]
+  },
+  "C01-ar-combination-node-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[True]": [
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[default-True]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[disabled-True]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[enabled-True]"
+    ]
+  }
 }

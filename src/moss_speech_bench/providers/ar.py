@@ -18,6 +18,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+from ar_combination import features
+
+PROFILE = {
+    "profile": os.environ.get("MOSS_CORRECTNESS_PROFILE"),
+    "ar_optimizations": json.loads(os.environ.get("MOSS_AR_OPTIMIZATIONS", "[]")),
+}
+
 MODEL_REVISION = "cff025bb41d8459d59abac0b5e44aba7f659ec9e"
 
 
@@ -249,7 +256,7 @@ def run(
             schema = {}
             model.load_weights(stream_weights(model_path, schema))
             model.assert_heads_independent()
-            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "native-norm":
+            if "native-norm" in features(PROFILE):
                 from sglang_omni.models.moss_speech.model_layers import MossSpeechRMSNorm
                 from sglang_omni.models.moss_speech.native_norm import NativeNorm
 
@@ -298,7 +305,7 @@ def run(
                 enable_alt_stream=False,
             )
             backend_type = TorchNativeAttnBackend
-            if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-host-metadata":
+            if "ar-host-metadata" in features(PROFILE):
                 from sglang_omni.models.moss_speech.attention import MossSpeechTorchNativeBackend
 
                 backend_type = MossSpeechTorchNativeBackend
@@ -319,6 +326,16 @@ def run(
 
                 report["full_prefill_graph"] = assert_full_prefill_graph(
                     model, lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"]))
+                )
+            if PROFILE["profile"] == "ar-combination":
+                from tests.unit_test.fixtures.moss_speech_model import assert_ar_combination
+
+                report["ar_combination"] = assert_ar_combination(
+                    model,
+                    optimizations=features(PROFILE),
+                    projection_batch_size=int(os.environ["MOSS_AR_PROJECTION_BATCH"]),
+                    graph_lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"])),
+                    native_norm_library=os.environ.get("MOSS_NATIVE_NORM_LIBRARY") or None,
                 )
             report["pool_configuration"] = {
                 "request_count": 1,
@@ -351,7 +368,7 @@ def run(
                 torch.cuda.synchronize(device)
                 started_seconds = time.perf_counter()
                 output = prefill(model, grid, backend)
-                if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-host-metadata":
+                if "ar-host-metadata" in features(PROFILE):
                     assert backend.host_metadata is not None
                     report["host_metadata_prefills"] += 1
                 if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-prefix-cache":

@@ -10,6 +10,12 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
+from .providers.ar_combination import (
+    features,
+    validate,
+    validate_activation,
+    validate_qualification,
+)
 from .providers.selection import expected_tests, selected_nodes
 from .storage import digest, read_json, source_identity, write_json
 
@@ -58,7 +64,10 @@ def load_suite(path):
     deployment = config.get("deployment", {})
     if type(config.get("context_remaining", False)) is not bool:
         raise ValueError("context_remaining requires a boolean")
-    if profile in activation:
+    combination = profile == "ar-combination"
+    if combination:
+        validate(config)
+    elif profile in activation:
         if deployment.get(activation[profile]) is not True:
             raise ValueError(profile + " requires enabled deployment activation")
     elif profile == "codec-cfm-graph":
@@ -97,11 +106,11 @@ def load_suite(path):
     else:
         raise ValueError("Unknown correctness profile")
     for declared_profile, flag in activation.items():
-        if deployment.get(flag) is True and profile != declared_profile:
+        if deployment.get(flag) is True and profile != declared_profile and not combination:
             raise ValueError("Enabled deployment requires profile " + declared_profile)
     if deployment.get("cfm_graph_mel_length") is not None and profile != "codec-cfm-graph":
         raise ValueError("Enabled CFM graph requires codec-cfm-graph profile")
-    if config.get("native_norm_library") and profile != "native-norm":
+    if config.get("native_norm_library") and profile != "native-norm" and not combination:
         raise ValueError("Native norm requires its explicit profile")
     if config.get("direct_lt_library") and profile != "direct-lt":
         raise ValueError("Native DirectLt requires its explicit profile")
@@ -111,7 +120,11 @@ def load_suite(path):
     ):
         raise ValueError("Projection graph profile requires batch size1..4")
     selected_nodes(
-        "C01", profile, config.get("context_remaining", False), config.get("test_suite", "legacy")
+        "C01",
+        profile,
+        config.get("context_remaining", False),
+        config.get("test_suite", "legacy"),
+        config.get("ar_optimizations", []),
     )
     return config
 
@@ -198,7 +211,7 @@ def preflight(config):
         assert all(
             Path(config[k]).resolve() in listed for k in ("native_tail_source", "native_tail_abi")
         ), "Unpinned native-tail research inputs"
-    if config["profile"] == "native-norm":
+    if "native-norm" in features(config):
         library = Path(config["native_norm_library"]).resolve()
         assert library in listed, "Native library must be in the pinned asset allowlist"
         assert config["deployment"].get("native_norm_library_sha256") == file_hash(library)
@@ -321,7 +334,10 @@ async def provider(gate, config, output):
             "ar_dtype": "bfloat16",
             "attention": "torch_native",
             "ar_tp": 1,
-            "ar_graph": config["profile"] in ("ar-decode-graph", "context-prefill-graph"),
+            "ar_graph": bool(set(features(config)) & {"ar-decode-graph", "context-prefill-graph"})
+            or (
+                config["profile"] == "ar-combination" and "ar-projection-graph" in features(config)
+            ),
         }
         if gate == "C04"
         else {"codec_dtype": "float32"}
@@ -333,11 +349,11 @@ async def provider(gate, config, output):
             (
                 "projection_graph_batch_size",
                 config.get("projection_graph_batch_size")
-                if config["profile"] == "ar-projection-graph"
+                if "ar-projection-graph" in features(config)
                 else None,
                 None,
             ),
-            ("mixed_modalities", config["profile"] == "mixed-modalities", False),
+            ("mixed_modalities", "mixed-modalities" in features(config), False),
         ):
             if config.get("deployment", {}).get(key, default) != expected:
                 return dict(
@@ -368,6 +384,8 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_AR_OPTIMIZATIONS=json.dumps(config.get("ar_optimizations", [])),
+        MOSS_AR_PROJECTION_BATCH=str(config.get("projection_graph_batch_size") or 0),
         MOSS_CORRECTNESS_TEST_SUITE=config.get("test_suite", "legacy"),
         MOSS_CONTEXT_REMAINING="1"
         if config.get("context_remaining") or config["profile"].startswith("context-")
@@ -465,6 +483,7 @@ async def provider(gate, config, output):
             config["profile"],
             config.get("context_remaining", False),
             config.get("test_suite", "legacy"),
+            config.get("ar_optimizations", []),
         )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
@@ -478,6 +497,11 @@ async def provider(gate, config, output):
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
         )
+    if gate == "C04" and config["profile"] == "ar-combination":
+        validate_qualification(
+            read_json(output / filenames[gate])["ar_combination"], features(config)
+        )
+        checks.append(dict(id="actual-ar-combination-full-heads-kv", status="pass"))
     if gate == "C04" and config["profile"] == "ar-decode-graph":
         graph = read_json(output / filenames[gate])["full_decode_graph"]
         assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
@@ -666,6 +690,14 @@ async def run_correctness(path, output, selected=None, resume=False):
                             "context_probes"
                         ]
                     result = await run_http(gate, http_config, folder)
+                    if (
+                        gate == "C08"
+                        and config["profile"] == "ar-combination"
+                        and result["status"] == "pass"
+                    ):
+                        result["service_activation"] = validate_activation(
+                            config, folder, require=False
+                        )
                 else:
                     result = await provider(gate, config, folder)
                 suite["gates"][gate] = result
