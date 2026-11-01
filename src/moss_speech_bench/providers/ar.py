@@ -249,13 +249,25 @@ def run(
         original_dtype = torch.get_default_dtype()
         torch.set_default_dtype(torch.bfloat16)
         try:
-            model = MossSpeechSGLangModel(configuration, init_device=device).eval()
-            assert model.total_attention_layers == 40 and model.attention_layer_ids() == list(
-                range(40)
-            )
-            schema = {}
-            model.load_weights(stream_weights(model_path, schema))
-            model.assert_heads_independent()
+            # Projection guards require version counters, as in the serving loader.
+            with torch.inference_mode(PROFILE["profile"] != "ar-combination"), torch.no_grad():
+                model = MossSpeechSGLangModel(configuration, init_device=device).eval()
+                assert model.total_attention_layers == 40 and model.attention_layer_ids() == list(
+                    range(40)
+                )
+                schema = {}
+                model.load_weights(stream_weights(model_path, schema))
+                model.assert_heads_independent()
+            if PROFILE["profile"] == "ar-combination":
+                parameters = dict(model.named_parameters())
+                assert parameters and all(not p.is_inference() for p in parameters.values()), (
+                    "AR combination requires versioned checkpoint parameters"
+                )
+                report["weight_versioning"] = dict(
+                    all_parameters_versioned=True,
+                    parameter_count=len(parameters),
+                    versions={name: parameter._version for name, parameter in parameters.items()},
+                )
             if "native-norm" in features(PROFILE):
                 from sglang_omni.models.moss_speech.model_layers import MossSpeechRMSNorm
                 from sglang_omni.models.moss_speech.native_norm import NativeNorm
