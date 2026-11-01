@@ -7,6 +7,7 @@ import importlib.metadata
 import os
 import platform
 import re
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -398,11 +399,23 @@ async def run(args):
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
+
+    async def execute():
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        previous_handler = signal.getsignal(signal.SIGTERM)
+        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+        try:
+            return await run(args)
+        finally:
+            loop.remove_signal_handler(signal.SIGTERM)
+            signal.signal(signal.SIGTERM, previous_handler)
+
     try:
-        result = asyncio.run(run(args))
+        result = asyncio.run(execute())
     except (ValueError, OSError, KeyError, AssertionError) as exc:
         p.exit(2, f"error: {exc}\n")
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         return 130
     if args.dry_run:
         print(dumps(result))

@@ -2,6 +2,9 @@ import asyncio
 import base64
 import io
 import json
+import os
+import signal
+import sys
 import wave
 from pathlib import Path
 
@@ -959,3 +962,122 @@ def test_p3_preflight_rejects_every_mismatched_context_capacity(pinned_candidate
     config["deployment"][field] = 512
     with pytest.raises(AssertionError, match="Context deployment"):
         preflight(config)
+
+
+@pytest.mark.parametrize("ignore_term", [False, True])
+async def test_cli_sigterm_reaps_independent_provider_session(tmp_path, ignore_term):
+    """Terminating the CLI must not strand its separate-session correctness worker."""
+    providers = tmp_path / "providers"
+    providers.mkdir()
+    (providers / "entry.py").write_text(
+        "import json, os, signal, sys\n"
+        "from pathlib import Path\n"
+        "output = Path(sys.argv[1])\n"
+        "def stop(signum, frame):\n"
+        "    (output / 'stopped.json').write_text(json.dumps({'pid': os.getpid()}))\n"
+        "    raise SystemExit(0)\n"
+        f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if ignore_term else 'stop'})\n"
+        "(output / 'started.json').write_text(json.dumps(\n"
+        "    {'pid': os.getpid(), 'pgid': os.getpgrp()}))\n"
+        "while True: signal.pause()\n"
+    )
+    config = dict(
+        workspace_root=str(tmp_path),
+        profile="hf-reference",
+        core_sha=CANDIDATE_SHA,
+        core_root=str(tmp_path),
+        candidate_python=sys.executable,
+        golden={"C05": {"tensors": "unused"}, "C06": {"report": "unused", "tensors": "unused"}},
+    )
+    for name in ("model_path", "codec_path", "audio_en", "audio_zh", "voice_wav", "code_profile"):
+        config[name] = str(tmp_path)
+    suite_path, output = tmp_path / "suite.json", tmp_path / "result"
+    write_json(suite_path, config)
+    bootstrap = (
+        "import runpy, sys; from pathlib import Path; "
+        "from moss_speech_bench import correctness; "
+        "correctness.PROVIDERS = Path(sys.argv.pop(1)); "
+        "runpy.run_module('moss_speech_bench', run_name='__main__')"
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        bootstrap,
+        str(providers),
+        "--phase",
+        "correctness",
+        "--correctness-config",
+        str(suite_path),
+        "--checks",
+        "C01",
+        "--output-dir",
+        str(output),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    provider_group = None
+    try:
+        started = output / "C01/started.json"
+
+        async def wait_for_start():
+            while not started.exists():
+                assert process.returncode is None
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(wait_for_start(), 10)
+        provider = read_json(started)
+        provider_group = provider["pgid"]
+        assert provider["pid"] == provider_group and provider_group != process.pid
+        write_json(
+            tmp_path / "processes.json",
+            dict(cli_pid=process.pid, cli_pgid=os.getpgid(process.pid), provider=provider),
+        )
+        process.send_signal(signal.SIGTERM)
+        _, error = await asyncio.wait_for(process.communicate(), 20)
+        assert process.returncode == 130, error.decode()
+        if ignore_term:
+            assert not (output / "C01/stopped.json").exists()
+        else:
+            assert read_json(output / "C01/stopped.json")["pid"] == provider["pid"]
+        with pytest.raises(ProcessLookupError):
+            os.kill(provider["pid"], 0)
+        interrupted = read_json(output / "correctness.json")
+        assert interrupted["status"] == "incomplete"
+        assert interrupted["gates"]["C01"]["status"] == "not_run"
+        assert "interrupted" in interrupted["gates"]["C01"]["reason"]
+    finally:
+        if process.returncode is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+        if provider_group is not None:
+            try:
+                os.killpg(provider_group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_cli_restores_existing_sigterm_handler(monkeypatch, tmp_path, fails):
+    from moss_speech_bench import cli
+
+    async def run(args):
+        if fails:
+            raise ValueError("fixture failure")
+        return {}
+
+    def previous_handler(signum, frame):
+        raise AssertionError("Existing handler must be restored, not invoked")
+
+    previous = signal.signal(signal.SIGTERM, previous_handler)
+    monkeypatch.setattr(cli, "run", run)
+    try:
+        if fails:
+            with pytest.raises(SystemExit) as error:
+                cli.main(["--output-dir", str(tmp_path)])
+            assert error.value.code == 2
+        else:
+            assert cli.main(["--output-dir", str(tmp_path)]) == 0
+        assert signal.getsignal(signal.SIGTERM) is previous_handler
+    finally:
+        signal.signal(signal.SIGTERM, previous)
