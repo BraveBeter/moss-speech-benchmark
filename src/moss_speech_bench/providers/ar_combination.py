@@ -14,6 +14,7 @@ FEATURES = (
     "mixed-modalities",
 )
 MARKERS = {
+    "ar-batched-rope": "batched RoPE reuse active",
     "ar-decode-graph": "full decode graph replay active",
     "ar-projection-graph": "projection graph replay active",
     "context-prefill-graph": "full prefill graph replay active",
@@ -195,8 +196,10 @@ def main():
     parser.add_argument("--output", required=True)
     arguments = parser.parse_args()
     config = load_suite(arguments.config)
-    if config["profile"] != "ar-combination":
-        parser.error("Activation audit requires an explicit ar-combination configuration")
+    if config["profile"] not in ("ar-combination", "ar-batched-rope"):
+        parser.error(
+            "Activation audit requires an explicit ar-combination or ar-batched-rope configuration"
+        )
     validate_activation(config, arguments.output)
 
 

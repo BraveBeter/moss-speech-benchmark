@@ -18,7 +18,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from ar_combination import features
+if __package__:
+    from .ar_combination import features
+    from .batched_rope import validate_qualification as validate_batched_rope
+else:
+    from ar_combination import features
+    from batched_rope import validate_qualification as validate_batched_rope
 
 PROFILE = {
     "profile": os.environ.get("MOSS_CORRECTNESS_PROFILE"),
@@ -349,6 +354,38 @@ def run(
                     graph_lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"])),
                     native_norm_library=os.environ.get("MOSS_NATIVE_NORM_LIBRARY") or None,
                 )
+            if PROFILE["profile"] == "ar-batched-rope":
+                from tests.unit_test.fixtures.moss_speech_model import qualify_batched_rope
+
+                grids = {
+                    name: torch.tensor(case["input_ids"], dtype=torch.long, device=device)
+                    for name, case in report["cases"].items()
+                }
+                proof, outputs = qualify_batched_rope(model, grids)
+                report["batched_rope"] = proof
+                proof["cases"] = {}
+                batched_vectors = {}
+                assert set(outputs) == {"2", "4"}
+                for batch, cases in outputs.items():
+                    assert set(cases) == set(grids)
+                    proof["cases"][batch] = {}
+                    for name, heads in cases.items():
+                        assert set(heads) == {"text", "audio"}
+                        proof["cases"][batch][name] = {}
+                        for modality, logits in heads.items():
+                            assert logits.dtype == torch.bfloat16
+                            vector = logits.float().cpu().contiguous()
+                            key = f"{name}.{modality}_last_logits"
+                            batched_vectors[f"b{batch}.{key}"] = vector
+                            proof["cases"][batch][name][modality] = compare_logits(
+                                vector, expected_vectors[key], report["policy"]
+                            )
+                batched_path = tensor_path.with_name("batched-rope-logits.safetensors")
+                save_file(batched_vectors, str(batched_path))
+                proof["tensor_artifact"] = str(batched_path)
+                proof["tensor_artifact_sha256"] = digest(batched_path)
+                write_json(report_path, report)
+                validate_batched_rope(proof, list(grids))
             report["pool_configuration"] = {
                 "request_count": 1,
                 "maximum_context_rows": maximum_rows + 1,

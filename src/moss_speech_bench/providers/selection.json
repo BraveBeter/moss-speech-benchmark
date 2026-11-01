@@ -944,5 +944,30 @@
   "C01-ar-combination": [
     "tests/unit_test/moss_speech/test_config.py::test_ar_combination_factory_forwards_independent_options",
     "tests/unit_test/moss_speech/test_model.py::test_ar_cleanup_attempts_every_owner_and_preserves_first_error"
-  ]
+  ],
+  "C01-ar-batched-rope": [
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_keeps_full_outputs_and_request_kv[1]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_keeps_full_outputs_and_request_kv[2]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_keeps_full_outputs_and_request_kv[4]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_falls_back_for_incompatible_execution[theta]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_falls_back_for_incompatible_execution[training]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_falls_back_for_incompatible_execution[grad]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_falls_back_for_incompatible_execution[hook]",
+    "tests/unit_test/moss_speech/test_model.py::test_batched_rope_qualification_returns_complete_heads_and_restores_state",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_reuse_falls_back_for_incompatible_execution[autocast]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_terms_preserve_full_context_reference_rounding[cpu-2]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_terms_preserve_full_context_reference_rounding[cpu-4]"
+  ],
+  "C03-ar-batched-rope": [
+    "tests/unit_test/moss_speech/test_model.py::test_cuda_decode_rope_reuse_keeps_full_outputs_and_request_kv[2]",
+    "tests/unit_test/moss_speech/test_model.py::test_cuda_decode_rope_reuse_keeps_full_outputs_and_request_kv[4]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_terms_preserve_full_context_reference_rounding[cuda-2]",
+    "tests/unit_test/moss_speech/test_model.py::test_decode_rope_terms_preserve_full_context_reference_rounding[cuda-4]"
+  ],
+  "C01-ar-batched-rope-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget": [
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[False]",
+      "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[True]"
+    ]
+  }
 }

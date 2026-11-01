@@ -61,6 +61,26 @@ Set `context_remaining: true` independently of the compute `profile` to qualify 
 
 Deployment must declare the corresponding `ar_graph`, `projection_graph_batch_size` or `mixed_modalities` setting; a mismatched or unqualified compute profile is rejected rather than silently covered by eager results. Projection HF prefill remains eager by design, with replay correctness separately established in C03. Server-side activation evidence is still required to show that the measured deployment used Graph/native/mixed admission: HTTP overlap alone does not establish an engine batch, and the client does not infer server counters from its local checkout. These additions do not change numerical tolerances, reference goldens or named Quick workloads.
 
+## Batched decode RoPE qualification
+
+Use `profile: "ar-batched-rope"`, `context_remaining: true`, and deployment
+`decode_rope_reuse: true`. This profile qualifies only per-forward cosine/sine
+reuse for B2/B4 decode; unrelated Graph/native/cache strategies are rejected.
+C01/C03 add fixed fallback, complete-head/KV, context-rounding and CUDA tests.
+C04 retains the eight serial HF checks and additionally teacher-forces all eight
+fixed HF inputs at both B2 and B4, compares both full vocabulary heads with the
+unchanged HF tolerance and raw top1 requirements, and requires exact disabled vs
+enabled full-head/all-40-layer KV proofs plus positive actual execution counts.
+The extra vectors are preserved as `batched-rope-logits.safetensors` with their hash.
+
+Pin `service_activation_log` and optional nonnegative `service_activation_offset`.
+C08 requires the actual `batched RoPE reuse active` execution marker, not a startup
+configuration message. After Quick, independently archive an activation audit
+for that same service/run using `python -m moss_speech_bench.providers.ar_combination
+--config <correctness.json> --output <run>/execution/activation`; do not infer an
+engine batch from HTTP concurrency alone. This does not change named workloads,
+reference tensors, tolerances, or qualify combinations of optimizations.
+
 ## Configure and run
 
 Use [examples/correctness.json](examples/correctness.json). Its workspace root

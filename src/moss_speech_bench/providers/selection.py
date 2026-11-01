@@ -68,6 +68,7 @@ def expected_tests(
         if (
             profile
             in (
+                "ar-batched-rope",
                 "ar-prefix-cache",
                 "ar-sampling-history",
                 "ar-host-metadata",

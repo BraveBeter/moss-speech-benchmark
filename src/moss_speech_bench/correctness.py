@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
+from .providers import batched_rope
 from .providers.ar_combination import (
     features,
     validate,
@@ -65,7 +66,11 @@ def load_suite(path):
     if type(config.get("context_remaining", False)) is not bool:
         raise ValueError("context_remaining requires a boolean")
     combination = profile == "ar-combination"
-    if combination:
+    if deployment.get("decode_rope_reuse", False) is not False and profile != "ar-batched-rope":
+        raise ValueError("Enabled deployment requires profile ar-batched-rope")
+    if profile == "ar-batched-rope":
+        batched_rope.validate(config)
+    elif combination:
         validate(config)
     elif profile in activation:
         if deployment.get(activation[profile]) is not True:
@@ -497,6 +502,10 @@ async def provider(gate, config, output):
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
         )
+    if gate == "C04" and config["profile"] == "ar-batched-rope":
+        report = read_json(output / filenames[gate])
+        batched_rope.validate_qualification(report["batched_rope"], list(report["cases"]))
+        checks.append(dict(id="actual-b2-b4-hf-full-heads-exact-kv", status="pass"))
     if gate == "C04" and config["profile"] == "ar-combination":
         validate_qualification(
             read_json(output / filenames[gate])["ar_combination"], features(config)
@@ -692,11 +701,11 @@ async def run_correctness(path, output, selected=None, resume=False):
                     result = await run_http(gate, http_config, folder)
                     if (
                         gate == "C08"
-                        and config["profile"] == "ar-combination"
+                        and config["profile"] in ("ar-combination", "ar-batched-rope")
                         and result["status"] == "pass"
                     ):
                         result["service_activation"] = validate_activation(
-                            config, folder, require=False
+                            config, folder, require=config["profile"] == "ar-batched-rope"
                         )
                 else:
                     result = await provider(gate, config, folder)
