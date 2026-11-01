@@ -117,3 +117,10 @@ def test_reference_pcm_reader_preserves_signed_samples(tmp_path):
     samples, rate = read_pcm16(path)
     assert rate == 24000 and samples.shape == (1, 5)
     np.testing.assert_array_equal(samples[0], values.astype(np.float32) / np.float32(32768))
+
+
+@pytest.mark.parametrize("task", [None, "mixed", "video", "S2T"])
+def test_mixed_rows_reject_missing_or_unsupported_task(tmp_path, task):
+    write_json(tmp_path / "mixed.json", [dict(id="one", task=task, text="hello")])
+    with pytest.raises(ValueError, match="per-row task"):
+        prepare(tmp_path, "json", "mixed.json", "mixed")

@@ -460,3 +460,42 @@ def test_single_summary_template_keeps_empty_phase_tables(tmp_path):
     for line in text.splitlines():
         if line.startswith("| 数据集") or line.startswith("| 检查项"):
             assert line in template
+
+
+async def test_custom_mixed_cell_overlaps_tasks_and_archives_per_request_identity(server, tmp_path):
+    url, state = server
+    write_json(
+        tmp_path / "mixed.json",
+        [
+            dict(id="text", task="t2t", text="Text output"),
+            dict(id="audio", task="t2s", text="Audio output"),
+        ],
+    )
+    write_json(
+        tmp_path / "mixed-config.json",
+        dict(
+            datasets=[
+                dict(
+                    id="mixed-pair",
+                    kind="json",
+                    source="mixed.json",
+                    task="mixed",
+                    language="en",
+                    expected=2,
+                )
+            ],
+            sampling=dict(seed=42, max_tokens=128),
+        ),
+    )
+    output = tmp_path / "mixed-output"
+    values = await run(args(tmp_path / "mixed-config.json", url, output, "--concurrency", "2"))
+    assert len(values) == 1 and state["peak"] == 2
+    metrics = next(iter(values.values()))
+    assert metrics["expected"] == metrics["succeeded"] == 2
+    from moss_speech_bench.storage import read_jsonl
+
+    rows = read_jsonl(output / "requests.jsonl")
+    assert {row["task"] for row in rows} == {"t2t", "t2s"}
+    assert {p["modalities"][0] for p in state["payloads"]} == {"text", "audio"}
+    frozen = read_jsonl(output / "inputs/mixed-pair.jsonl")
+    assert {row["task"] for row in frozen} == {"t2t", "t2s"}

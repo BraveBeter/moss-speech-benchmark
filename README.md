@@ -150,3 +150,9 @@ Named speech-QA workload JSON may set `task_prompts` to customize one task. S2T 
 ```
 
 Each task prompt takes precedence over the dataset prompt. Named S2T preserves the native text prefix; `custom` diagnostics retain their explicitly configured raw prompts. The effective prompt and payload hashes enter the measurement contract. Suite v3 changes S2T requests, so use a fresh run and baseline; old v2 outputs are not rewritten or resumed under v3. Empty-output failure rules remain unchanged.
+
+## Custom mixed-output measurements
+
+A custom JSON dataset may use `"task": "mixed"`; every row must then declare exactly one supported `task` (`t2t`, `t2s`, `s2t`, `s2s`). For example, two rows with `task: t2t` and `task: t2s` run in the same dataset/concurrency cell, rather than being serialized as different datasets. Each archived input and output retains its actual task and payload. The dataset language still applies to every row; use separate datasets for different languages. A conflicting row task in a homogeneous dataset is rejected. This explicit custom entry does not change Quick/Daily/Full task selection, and HTTP concurrency remains distinct from engine batch size.
+
+For new eager-base qualification, set `context_remaining: true` in the correctness config and select the appropriate compute profile described in [CORRECTNESS.md](CORRECTNESS.md). This flag composes with Graph, mixed-admission and native-norm profiles; it does not replace their mandatory specialized checks.

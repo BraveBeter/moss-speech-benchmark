@@ -84,7 +84,7 @@ def _records(spec, root):
 
 def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, subset_seed=42):
     task = spec["task"]
-    if task not in TASKS or spec["language"] not in ("en", "zh"):
+    if task not in TASKS | {"mixed"} or spec["language"] not in ("en", "zh"):
         raise ValueError("Invalid task or language")
     prompt = spec.get("prompt", {})
     if not isinstance(prompt, dict) or set(prompt) - {"template", "system", "name"}:
@@ -128,11 +128,16 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
         )
     prepared, seen = [], set()
     for row in records:
+        row_task = row.get("task") if task == "mixed" else task
+        if row_task not in TASKS or (task != "mixed" and "task" in row and row["task"] != task):
+            raise ValueError("Invalid or conflicting per-row task")
+        if row_task.startswith("s") and "template" in prompt:
+            raise ValueError("Speech input accepts a system prompt, not a text template")
         sample_id = str(row["id"])
         if not sample_id or sample_id in seen:
             raise ValueError(f"Duplicate/empty sample id: {sample_id!r}")
         seen.add(sample_id)
-        if task.startswith("s"):
+        if row_task.startswith("s"):
             audio_path = (root / row["audio"]).resolve()
             raw = audio_path.read_bytes()
             if not raw:
@@ -152,7 +157,7 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
                 raise ValueError(f"Empty text: {sample_id}")
             if "template" in prompt:
                 content = prompt["template"].replace("{text}", content)
-            elif task == "t2s":
+            elif row_task == "t2s":
                 instruction = (
                     "Read the following text verbatim. Do not add any other words:\n"
                     if spec["language"] == "en"
@@ -163,17 +168,17 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
         payload.update(
             model=model,
             messages=[{"role": "user", "content": content}],
-            modalities=["audio" if task.endswith("s") else "text"],
+            modalities=["audio" if row_task.endswith("s") else "text"],
             stream=stream,
         )
         if "system" in prompt:
             payload["messages"].insert(0, {"role": "system", "content": prompt["system"]})
-        if task.endswith("s") and stream:
+        if row_task.endswith("s") and stream:
             payload["audio"] = {"format": "pcm"}
         prepared.append(
             {
                 "id": sample_id,
-                "task": task,
+                "task": row_task,
                 "language": spec["language"],
                 "payload": payload,
                 "expected": row.get("expected", row.get("text")),
