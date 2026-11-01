@@ -598,3 +598,50 @@ async def test_uncovered_compute_path_never_runs_an_eager_fallback(
     assert "declared compute path" in result["gates"][gate]["reason"]
     assert result["gates"]["C07"]["status"] == "not_run"
     assert result["status"] == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "profile,flag",
+    [
+        ("ar-prefix-cache", "ar_prefix_cache"),
+        ("ar-sampling-history", "cache_sampling_history"),
+        ("ar-host-metadata", "use_host_attention_metadata"),
+        ("codec-fairness", "stream_decode_fairness"),
+    ],
+)
+def test_p3_profiles_require_actual_deployment_activation(tmp_path, profile, flag):
+    from moss_speech_bench.correctness import load_suite
+
+    config = {
+        "profile": profile,
+        "workspace_root": str(tmp_path),
+        "core_sha": "a" * 40,
+        "deployment": {flag: True},
+        "context_remaining": True,
+    }
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    assert load_suite(path)["context_remaining"] is True
+    config["deployment"][flag] = False
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="requires"):
+        load_suite(path)
+
+
+def test_p3_selector_preserves_context_remaining_and_independent_profile():
+    from moss_speech_bench.providers.selection import expected_tests
+
+    selection = {
+        "C01": ["old"],
+        "context-window-replacements": {"old": "new"},
+        "C01-context-window": ["context"],
+        "C01-context-remaining": ["remaining"],
+        "C01-ar-prefix-cache": ["prefix"],
+    }
+    assert expected_tests(selection, "C01", "ar-prefix-cache", True) == [
+        "new",
+        "context",
+        "remaining",
+        "prefix",
+    ]
+    assert expected_tests(selection, "C01", "hf-reference") == ["old"]

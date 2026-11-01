@@ -335,6 +335,12 @@ def run(
                 torch.cuda.synchronize(device)
                 started_seconds = time.perf_counter()
                 output = prefill(model, grid, backend)
+                if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-prefix-cache":
+                    from tests.unit_test.fixtures.moss_speech_prefix_cache import (
+                        verify_cached_prefill,
+                    )
+
+                    case["prefix_cache"] = verify_cached_prefill(model, grid, output, backend)
                 torch.cuda.synchronize(device)
                 case["forward_seconds"] = time.perf_counter() - started_seconds
                 case["heads"] = {}

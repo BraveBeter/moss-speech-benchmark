@@ -286,6 +286,13 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
     torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
     decoder = AudioDecoder(root / "flow/flow.pt", root / "flow/hift.pt", device=device).eval()
+    native_owner = None
+    if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "direct-lt":
+        from sglang_omni.models.moss_speech.components.cfm_direct_lt import install_direct_lt
+
+        native_owner = install_direct_lt(
+            decoder.flow.decoder.estimator, os.environ["MOSS_DIRECT_LT_LIBRARY"]
+        )
     torch.cuda.synchronize(device)
     after_constructor = rng_hashes(torch, np, device)
     assert not decoder.flow.training and not decoder.hift.training
@@ -509,6 +516,11 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
         and all(report["parameter_count_matches_reference"].values())
         else "failed"
     )
+    if native_owner is not None:
+        native_owner.close()
+        report["direct_lt"] = dict(
+            closed=native_owner.closed, calls=native_owner.calls, installed=native_owner.installed
+        )
     report["stage"] = "complete-production-full-codec-comparison"
 
 

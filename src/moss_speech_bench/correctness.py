@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
+from .providers.selection import expected_tests
 from .storage import digest, read_json, source_identity, write_json
 
 GATES = tuple("C%02d" % i for i in range(9))
@@ -42,7 +43,28 @@ def load_suite(path):
     if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
         raise ValueError("Correctness requires an explicit full candidate SHA")
     profile = config.get("profile")
-    if profile in ("hf-reference", "eager-base"):
+    activation = {
+        "ar-prefix-cache": "ar_prefix_cache",
+        "ar-sampling-history": "cache_sampling_history",
+        "ar-host-metadata": "use_host_attention_metadata",
+        "codec-fairness": "stream_decode_fairness",
+    }
+    deployment = config.get("deployment", {})
+    if type(config.get("context_remaining", False)) is not bool:
+        raise ValueError("context_remaining requires a boolean")
+    if profile in activation:
+        if deployment.get(activation[profile]) is not True:
+            raise ValueError(profile + " requires enabled deployment activation")
+    elif profile == "codec-cfm-graph":
+        length = deployment.get("cfm_graph_mel_length")
+        if type(length) is not int or not 100 <= length <= 4000 or length % 100:
+            raise ValueError("codec-cfm-graph requires eligible fixed mel length")
+    elif profile == "codec-score-release":
+        pass
+    elif profile == "direct-lt":
+        if not config.get("direct_lt_library") or config.get("native_norm_library"):
+            raise ValueError("direct-lt requires its explicit library without other native paths")
+    elif profile in ("hf-reference", "eager-base"):
         # eager-base is a legacy spelling of the reference compute adapter, not a Git pin.
         if config.get("native_norm_library") is not None:
             raise ValueError("Use the native-norm profile to qualify a native norm library")
@@ -54,6 +76,13 @@ def load_suite(path):
             raise ValueError("native-norm requires an explicit native library")
     else:
         raise ValueError("Unknown correctness profile")
+    for declared_profile, flag in activation.items():
+        if deployment.get(flag) is True and profile != declared_profile:
+            raise ValueError("Enabled deployment requires profile " + declared_profile)
+    if deployment.get("cfm_graph_mel_length") is not None and profile != "codec-cfm-graph":
+        raise ValueError("Enabled CFM graph requires codec-cfm-graph profile")
+    if config.get("direct_lt_library") and profile != "direct-lt":
+        raise ValueError("Native DirectLt requires its explicit profile")
     return config
 
 
@@ -80,6 +109,17 @@ def preflight(config):
     assert all(Path(p).exists() for p in required)
     for name in ("audio_en", "audio_zh", "voice_wav", "code_profile"):
         assert Path(config[name]).resolve() in listed, "Unpinned input: " + name
+    if config.get("context_remaining"):
+        probe = Path(config["long_text_request"]).resolve()
+        assert probe in listed and read_json(probe)["modalities"] == ["text"], (
+            "Unpinned long text probe"
+        )
+        assert config["deployment"].get("context_limit") == 40960
+        assert config["deployment"].get("max_total_tokens") == 40962
+    if config["profile"] == "direct-lt":
+        library = Path(config["direct_lt_library"]).resolve()
+        assert library in listed, "Unpinned DirectLt library"
+        assert config["deployment"].get("direct_lt_library_sha256") == file_hash(library)
     for gate in ("C02", "C04", "C05", "C06"):
         golden = config["golden"][gate]
         assert all(Path(p).resolve() in listed for p in golden.values()), "Unpinned golden"
@@ -242,11 +282,17 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_CONTEXT_REMAINING="1" if config.get("context_remaining") else "0",
+        MOSS_ENCODER_GOLDEN=config["golden"]["C05"]["tensors"],
+        MOSS_CODEC_GOLDEN=config["golden"]["C06"]["report"],
+        MOSS_CODEC_GOLDEN_TENSORS=config["golden"]["C06"]["tensors"],
+        MOSS_DIRECT_LT_LIBRARY=config.get("direct_lt_library", ""),
         MOSS_NATIVE_NORM_LIBRARY=config.get("native_norm_library", ""),
         MOSS_NATIVE_TAIL_SOURCE=config.get("native_tail_source", ""),
         MOSS_NATIVE_TAIL_ABI=config.get("native_tail_abi", ""),
         MOSS_CODEC_PATH=config["codec_path"],
         PYTHONPATH=config["core_root"],
+        PATH=str(Path(python).parent) + os.pathsep + os.environ.get("PATH", ""),
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
         CUBLAS_WORKSPACE_CONFIG=":4096:8",
@@ -323,8 +369,8 @@ async def provider(gate, config, output):
     if gate in ("C01", "C03"):
         report = read_json(output / "coverage.json")
         selection = read_json(PROVIDERS / "selection.json")
-        expected = selection[gate] + (
-            selection[gate + "-native-norm"] if config["profile"] == "native-norm" else []
+        expected = expected_tests(
+            selection, gate, config["profile"], config.get("context_remaining", False)
         )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
@@ -338,6 +384,18 @@ async def provider(gate, config, output):
         checks = numerical_checks(
             gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
         )
+    if gate == "C04" and config["profile"] == "ar-prefix-cache":
+        for name, case in read_json(output / filenames[gate])["cases"].items():
+            reuse = case["prefix_cache"]
+            assert len(reuse) == 2 and all(
+                row["matched_rows"] > 0 and row["kv_layers"] == 40 and row["exact_heads"] == 2
+                for row in reuse
+            )
+            checks.append(dict(id=name + ":cached-prefill-exact", status="pass"))
+    if gate == "C06" and config["profile"] == "direct-lt":
+        actual = read_json(output / filenames[gate])["direct_lt"]
+        assert actual["closed"] and actual["installed"] > 0 and actual["calls"] > 0
+        checks.append(dict(id="direct-lt-real-full-affine", status="pass"))
     if gate == "C03" and config["profile"] == "native-tail-research":
         research = read_json(output / "native-tail-research.json")
         assert research["status"] == "unsupported" and research["total_cases"] == 32
@@ -451,7 +509,13 @@ async def run_correctness(path, output, selected=None, resume=False):
                 if gate == "C00":
                     result = preflight(config)
                 elif gate in ("C07", "C08"):
-                    result = await run_http(gate, config, folder)
+                    http_config = dict(config)
+                    if gate == "C07" and config.get("context_remaining"):
+                        artifacts = suite["gates"]["C02"]["artifacts"]
+                        probe = next(k for k in artifacts if k.endswith("/processor.json"))
+                        assert file_hash(output / probe) == artifacts[probe]
+                        http_config["context_probes"] = read_json(output / probe)["context_probes"]
+                    result = await run_http(gate, http_config, folder)
                 else:
                     result = await provider(gate, config, folder)
                 suite["gates"][gate] = result

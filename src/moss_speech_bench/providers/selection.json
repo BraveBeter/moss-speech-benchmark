@@ -525,5 +525,60 @@
   ],
   "C03-native-norm": [
     "tests/unit_test/moss_speech/test_model.py::test_native_norm_cuda_rounding_and_fallback"
-  ]
+  ],
+  "C01-direct-lt": [
+    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cpu_gradient_fallback_keeps_parameters"
+  ],
+  "C03-direct-lt": [
+    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_cuda_full_affine_ownership_and_fallback",
+    "tests/unit_test/moss_speech/test_codec.py::test_direct_lt_real_codec_interleaves_exact_pcm_and_releases"
+  ],
+  "C01-context-window": [
+    "tests/unit_test/moss_speech/test_config.py::test_context_window_defaults_and_explicit_overrides",
+    "tests/unit_test/moss_speech/test_requests.py::test_long_text_is_checked_after_canonical_tokenization",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40959-1-True]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40960-1-False]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[39960-1000-True]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[39961-1000-False]",
+    "tests/unit_test/moss_speech/test_requests.py::test_hf_generation_budget_reaches_native_request[513]",
+    "tests/unit_test/moss_speech/test_requests.py::test_hf_generation_budget_reaches_native_request[1000]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_terminal_audio_preserves_natural_eos_and_length_code_counts[stop-999]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_terminal_audio_preserves_natural_eos_and_length_code_counts[length-1000]",
+    "tests/unit_test/moss_speech/test_config.py::test_context_window_survives_upstream_generation_and_kv_guards[40959-1]",
+    "tests/unit_test/moss_speech/test_config.py::test_context_window_survives_upstream_generation_and_kv_guards[39960-1000]"
+  ],
+  "context-window-replacements": {
+    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-513]": "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[preprocessing-context_limit-40961]"
+  },
+  "C01-context-remaining": [
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40959-None-True]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[40960-None-False]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[5-None-True]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[39959-1001-True]",
+    "tests/unit_test/moss_speech/test_requests.py::test_context_window_reserves_generation_slot[39960-1001-False]",
+    "tests/unit_test/moss_speech/test_requests.py::test_hf_generation_budget_reaches_native_request[1001]",
+    "tests/unit_test/moss_speech/test_requests.py::test_hf_generation_budget_reaches_native_request[40959]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_terminal_audio_preserves_natural_eos_and_length_code_counts[length-1001]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_text_stream_accepts_more_than_1000_and_rejects_context_overflow",
+    "tests/unit_test/moss_speech/test_streaming.py::test_codec_rejects_context_overflow_and_releases_session"
+  ],
+  "C01-ar-prefix-cache": [
+    "tests/unit_test/moss_speech/test_config.py::test_prefix_cache_is_strict_opt_in_and_reaches_engine_factory",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[audio]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[text]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[salt]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[extra]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_dual_rows_and_namespaces_are_not_selected_token_keys[length]",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_real_checkpoint_deduplicates_locks_rebinds_and_evicts",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_uncomputed_generated_tail_and_abort_cleanup_never_enter_tree",
+    "tests/unit_test/moss_speech/test_prefix_cache.py::test_retracted_generated_history_cannot_reuse_or_overwrite_prompt_kv"
+  ],
+  "C03-ar-prefix-cache": [
+    "tests/unit_test/moss_speech/test_model.py::test_cuda_prefix_hits_preserve_both_logits_and_all_kv_layers"
+  ],
+  "C01-score-release": [
+    "tests/unit_test/moss_speech/test_codec.py::test_relative_attention_releases_score_temporaries[False]",
+    "tests/unit_test/moss_speech/test_codec.py::test_relative_attention_releases_score_temporaries[True]"
+  ],
+  "C03-score-release": []
 }

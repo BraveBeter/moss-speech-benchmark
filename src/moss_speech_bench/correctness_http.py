@@ -12,7 +12,7 @@ import aiohttp
 import numpy as np
 
 from .client import ChatClient, sse_events
-from .storage import read_jsonl, write_json
+from .storage import read_json, read_jsonl, write_json
 
 PROMPTS = {
     "en": "Answer briefly: what do people drink when they are thirsty?",
@@ -64,7 +64,10 @@ def check(row, request, directory):
     assert all(
         type(usage.get(k)) is int for k in ("prompt_tokens", "completion_tokens", "total_tokens")
     )
-    assert usage["prompt_tokens"] > 0 and 0 < usage["completion_tokens"] <= request["max_tokens"]
+    budget = request.get("max_tokens")
+    if budget is None:
+        budget = 40960 - usage["prompt_tokens"]
+    assert usage["prompt_tokens"] > 0 and 0 < usage["completion_tokens"] <= budget
     assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
     audio = pcm(row, directory)
     if request["modalities"] == ["text"]:
@@ -112,7 +115,7 @@ async def run_http(gate, config, output):
     async def send(case, request, language="en", session=None):
         sample = dict(
             id=case,
-            task=("s" if isinstance(request["messages"][0]["content"], list) else "t")
+            task=("s" if any(isinstance(m["content"], list) for m in request["messages"]) else "t")
             + ("s" if request["modalities"] == ["audio"] else "t"),
             language=language,
             payload=request,
@@ -229,6 +232,127 @@ async def run_http(gate, config, output):
             ("invalid", invalid),
         ]:
             await logical(name, function)
+        if config.get("context_remaining"):
+            probes = config["context_probes"]
+            assert [p["prompt_tokens"] for p in probes] == [40959, 40960]
+
+            async def context_boundary():
+                trials = [
+                    (p, status, omitted)
+                    for p, status in zip(probes, (200, 400))
+                    for omitted in ([False, True] if config.get("context_remaining") else [False])
+                ]
+                for probe, expected_status, omitted in trials:
+                    request = payload(config, limit=1)
+                    request["messages"][0]["content"] = probe["text"]
+                    if omitted:
+                        request.pop("max_tokens")
+                    async with aiohttp.ClientSession(
+                        timeout=aiohttp.ClientTimeout(total=config.get("timeout", 300))
+                    ) as session:
+                        async with session.post(
+                            client.url, json=request, headers=client.headers
+                        ) as response:
+                            body = await response.json()
+                            attempts.append(
+                                dict(
+                                    case="context-boundary",
+                                    request=request,
+                                    http_status=response.status,
+                                    response=body,
+                                    expected_prompt_tokens=probe["prompt_tokens"],
+                                )
+                            )
+                            write_json(output / "attempts.json", attempts)
+                            assert response.status == expected_status, body
+                            if expected_status == 200:
+                                assert body["usage"]["prompt_tokens"] == 40959
+                                assert body["usage"]["completion_tokens"] == 1
+                                assert body["usage"]["total_tokens"] == 40960
+                            else:
+                                assert "context" in str(body).lower() or "40960" in str(body)
+                await send("after-context-rejection", payload(config))
+                return dict(
+                    accepted_prompt_tokens=40959,
+                    reserved_generation_tokens=1,
+                    rejected_prompt_tokens=40960,
+                )
+
+            async def generation_boundary(target):
+                budget = 1001 if config.get("context_remaining") else 1000
+                request = payload(config, target=target, stream=True, limit=budget)
+                request["messages"][0]["content"] = (
+                    "请写一篇不少于两千字的科幻故事：一位宇航员在木星的卫星上发现了一座失落的城市。请直接开始写完整故事，详细描写探索的经过和人物对话，不要写提纲，不要总结任务。"
+                )
+                if target == "text":
+                    request = read_json(config["long_text_request"])
+                    request.update(model=config["model"], max_tokens=budget, stream=True)
+                    request["audio"] = dict(format="pcm")
+                row = await send(
+                    f"generation-{budget}-" + target, request, "en" if target == "text" else "zh"
+                )
+                assert row.usage["completion_tokens"] == budget and row.finish_reason == "length", (
+                    row.usage
+                )
+                return dict(
+                    completion_tokens=row.usage["completion_tokens"],
+                    finish_reason=row.finish_reason,
+                )
+
+            async def over_generation():
+                budget = 40960 if config.get("context_remaining") else 1001
+                request = payload(config, limit=budget)
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=config.get("timeout", 300))
+                ) as session:
+                    async with session.post(
+                        client.url, json=request, headers=client.headers
+                    ) as response:
+                        body = await response.text()
+                        attempts.append(
+                            dict(
+                                case=f"generation-{budget}",
+                                request=request,
+                                http_status=response.status,
+                                body=body,
+                            )
+                        )
+                        write_json(output / "attempts.json", attempts)
+                        assert (
+                            response.status == 400
+                            and str(40959 if budget == 40960 else 1000) in body
+                        ), body
+                await send("after-generation-rejection", payload(config))
+
+            async def omitted_eos(target):
+                request = payload(config, target=target, stream=True)
+                request["messages"][0]["content"] = "Reply with exactly one word: hello."
+                if target == "text":
+                    request.pop("max_tokens")
+                else:
+                    request["max_tokens"] = None
+                row = await send("omitted-eos-" + target, request)
+                assert row.finish_reason == "stop", row.usage
+                assert 0 < row.usage["completion_tokens"] < 40960 - row.usage["prompt_tokens"]
+                return dict(
+                    usage=row.usage,
+                    finish_reason=row.finish_reason,
+                    budget=request.get("max_tokens"),
+                )
+
+            await logical("context-boundary", context_boundary)
+            budget = 1001 if config.get("context_remaining") else 1000
+            await logical(f"generation-{budget}-text", lambda: generation_boundary("text"))
+            await logical(f"generation-{budget}-audio", lambda: generation_boundary("audio"))
+            await logical(
+                "generation-over-context-rejected"
+                if config.get("context_remaining")
+                else "generation-1001-rejected",
+                over_generation,
+            )
+            if config.get("context_remaining"):
+                await logical("omitted-eos-text", lambda: omitted_eos("text"))
+                await logical("omitted-eos-audio", lambda: omitted_eos("audio"))
     else:
         for target, limit in [("text", 64), ("audio", 96)]:
 
@@ -290,7 +414,17 @@ async def run_http(gate, config, output):
                 return dict(overlap_s=overlap, post_attempts=4)
 
             await logical(target, concurrent)
-    expected = 20 if gate == "C07" else 2
+    expected = (
+        (
+            26
+            if config.get("context_remaining")
+            else 24
+            if config.get("profile") == "context-window"
+            else 20
+        )
+        if gate == "C07"
+        else 2
+    )
     return dict(
         checks=results,
         http_attempts=len(attempts),
