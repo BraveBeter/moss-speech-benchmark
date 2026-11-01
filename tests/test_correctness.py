@@ -793,3 +793,37 @@ def test_context_admission_keeps_arbitrary_git_and_rejects_wrong_capacity_or_str
     deployment["small_first_chunk"] = not deployment["small_first_chunk"]
     with pytest.raises(AssertionError):
         preflight(config)
+
+
+def test_p4_suite_keeps_legacy_and_context_regressions():
+    from moss_speech_bench.correctness import PROVIDERS
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    frozen = read_json(PROVIDERS / "selection.json")
+    assert selected_nodes("C01", "hf-reference") == frozen["C01"]
+    assert selected_nodes("C03", "hf-reference") == frozen["C03"]
+    assert len(selected_nodes("C01", "context-remaining")) == 536
+    with pytest.raises(ValueError, match="test suite"):
+        selected_nodes("C01", "context-remaining", test_suite="unknown")
+    with pytest.raises(ValueError, match="context-remaining"):
+        selected_nodes("C01", "hf-reference", test_suite="p4-16")
+
+
+@pytest.mark.parametrize(
+    "suite,cpu_count,cuda_count",
+    [("p4-15", 545, 3), ("p4-16", 540, 9), ("p4-17", 536, 4), ("p4-18", 539, 4)],
+)
+def test_p4_selection_retains_exact_strategy_and_context_nodes(suite, cpu_count, cuda_count):
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    cpu = selected_nodes("C01", "context-remaining", test_suite=suite)
+    cuda = selected_nodes("C03", "context-remaining", test_suite=suite)
+    assert len(cpu) == len(set(cpu)) == cpu_count
+    assert len(cuda) == len(set(cuda)) == cuda_count
+    assert not set(cpu) & set(cuda)
+    assert any("40960" in node for node in cpu)
+    if suite == "p4-16":
+        assert any("rng_draw_order[False-False-cpu]" in node for node in cpu)
+        assert any("rng_draw_order[False-False-cuda]" in node for node in cuda)
+        assert any("scalar_sampling_fallback" in node for node in cpu)
+        assert any("scalar_sampling_fallback" in node for node in cuda)

@@ -41,6 +41,7 @@ try:
             mode,
             os.environ.get("MOSS_CORRECTNESS_PROFILE", "hf-reference"),
             os.environ.get("MOSS_CONTEXT_REMAINING") == "1",
+            os.environ.get("MOSS_CORRECTNESS_TEST_SUITE", "legacy"),
         )
 
         class Coverage:

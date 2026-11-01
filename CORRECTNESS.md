@@ -188,3 +188,9 @@ Prefill graphs additionally require `graph_lengths` and identical `deployment.pr
 C06 remains an independent HF full offline codec comparison. Startup changes the streaming chunk schedule and may change PCM; C07/C08 verify the actual strategy's protocol, full sample accounting, repeatability and isolation, not cross-strategy waveform or perceptual equality. Offline quality scoring is separate.
 
 The eight independent HF AR cases remain the original prefill inputs. Finite Graph qualification additionally checks candidate complete-checkpoint Graph against eager heads/KV; if the HF cases are outside the configured bank, they are fallback coverage and are not a new direct Graph-HF numerical oracle.
+
+## P4 migration regression selection
+
+The `context-remaining` compute profile accepts an optional fixed `test_suite`: `p4-15` (codec unready return, 545 CPU/3 CUDA), `p4-16` (sampling return, 540/9), `p4-17` (host overlap, 536/4), or `p4-18` (shared HiFT, 539/4). Each retains the full new-context suite and explicitly maps renamed strategy tests. The default `legacy` selection preserves every existing compute profile. Unknown suites, duplicate or absent replacement nodes, skips and incomplete collection fail qualification. Both the isolated provider and validator use the same fixed composition; execution remains in the candidate repository.
+
+The shared-HiFT CUDA test requires the provider's `MOSS_CODEC_PATH`, `MOSS_AUDIO_VOICE` and `MOSS_CODE_PROFILE` assets; a missing-asset skip cannot pass C03. These additions change no numeric threshold, HF reference, HTTP check, performance metric, workload, or scoring behavior.

@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
-from .providers.selection import expected_tests
+from .providers.selection import expected_tests, selected_nodes
 from .storage import digest, read_json, source_identity, write_json
 
 GATES = tuple("C%02d" % i for i in range(9))
@@ -78,6 +78,9 @@ def load_suite(path):
         or not 1 <= config["projection_graph_batch_size"] <= 4
     ):
         raise ValueError("Projection graph profile requires batch size1..4")
+    selected_nodes(
+        "C01", profile, config.get("context_remaining", False), config.get("test_suite", "legacy")
+    )
     return config
 
 
@@ -321,6 +324,7 @@ async def provider(gate, config, output):
         MOSS_AUDIO_VOICE=config["voice_wav"],
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
+        MOSS_CORRECTNESS_TEST_SUITE=config.get("test_suite", "legacy"),
         MOSS_CONTEXT_REMAINING="1"
         if config.get("context_remaining") or config["profile"].startswith("context-")
         else "0",
@@ -408,7 +412,11 @@ async def provider(gate, config, output):
         report = read_json(output / "coverage.json")
         selection = read_json(PROVIDERS / "selection.json")
         expected = expected_tests(
-            selection, gate, config["profile"], config.get("context_remaining", False)
+            selection,
+            gate,
+            config["profile"],
+            config.get("context_remaining", False),
+            config.get("test_suite", "legacy"),
         )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
