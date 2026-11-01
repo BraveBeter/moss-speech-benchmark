@@ -14,6 +14,7 @@ from .providers.selection import expected_tests, selected_nodes
 from .storage import digest, read_json, source_identity, write_json
 
 GATES = tuple("C%02d" % i for i in range(9))
+DIRECT_LT_QUALIFIED_MEL_LENGTHS = (1392, 1400, 1424, 1500)
 PROVIDERS = Path(__file__).with_name("providers")
 
 
@@ -497,9 +498,52 @@ async def provider(gate, config, output):
             )
             checks.append(dict(id=name + ":cached-prefill-exact", status="pass"))
     if gate == "C06" and config["profile"] == "direct-lt":
-        actual = read_json(output / filenames[gate])["direct_lt"]
-        assert actual["closed"] and actual["installed"] > 0 and actual["calls"] > 0
-        checks.append(dict(id="direct-lt-real-full-affine", status="pass"))
+        report = read_json(output / filenames[gate])
+        actual = report["direct_lt"]
+        qualified = actual.get("qualified_lengths")
+        assert (
+            type(qualified) is list
+            and all(type(length) is int for length in qualified)
+            and qualified == list(DIRECT_LT_QUALIFIED_MEL_LENGTHS)
+        ), "DirectLt qualified-length identity differs from the fixed current-ABI domain"
+        assert (
+            actual["closed"] is True
+            and type(actual["installed"]) is int
+            and actual["installed"] > 0
+            and type(actual["calls"]) is int
+            and actual["calls"] >= 0
+        ), "DirectLt requires an installed, closed owner with an integer native-call count"
+        voice_shape = report["voice_conditioning"]["actual_shapes"]["prompt_token"]
+        assert (
+            len(voice_shape) == 2
+            and voice_shape[0] == 1
+            and type(voice_shape[1]) is int
+            and voice_shape[1] > 0
+            and report["profile"]["voice_prompt_tokens"] == voice_shape[1]
+        ), "DirectLt offline voice shape differs from the actual profile"
+        counts = {name: case["code_count"] for name, case in report["cases"].items()}
+        assert all(
+            type(count) is int and count > 0 and name == f"codes{count}"
+            for name, count in counts.items()
+        )
+        mel_lengths = {name: (voice_shape[1] + count) * 4 for name, count in counts.items()}
+        eligible = [name for name, length in mel_lengths.items() if length in qualified]
+        if eligible:
+            assert actual["calls"] > 0, "Eligible DirectLt offline shapes require native calls"
+            check_id = "direct-lt-real-full-affine"
+        else:
+            assert actual["calls"] == 0, "Out-of-domain DirectLt offline shapes must remain eager"
+            check_id = "offline-shape-fallback"
+        checks.append(
+            dict(
+                id=check_id,
+                status="pass",
+                qualified_lengths=qualified,
+                observed_mel_lengths=mel_lengths,
+                eligible_cases=eligible,
+                native_calls=actual["calls"],
+            )
+        )
     if gate == "C03" and config["profile"] == "native-tail-research":
         research = read_json(output / "native-tail-research.json")
         assert research["status"] == "unsupported" and research["total_cases"] == 32

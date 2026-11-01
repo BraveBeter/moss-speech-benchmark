@@ -288,7 +288,10 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
     decoder = AudioDecoder(root / "flow/flow.pt", root / "flow/hift.pt", device=device).eval()
     native_owner = None
     if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "direct-lt":
-        from sglang_omni.models.moss_speech.components.cfm_direct_lt import install_direct_lt
+        from sglang_omni.models.moss_speech.components.cfm_direct_lt import (
+            FULL_LENGTHS,
+            install_direct_lt,
+        )
 
         native_owner = install_direct_lt(
             decoder.flow.decoder.estimator, os.environ["MOSS_DIRECT_LT_LIBRARY"]
@@ -519,7 +522,10 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
     if native_owner is not None:
         native_owner.close()
         report["direct_lt"] = dict(
-            closed=native_owner.closed, calls=native_owner.calls, installed=native_owner.installed
+            closed=native_owner.closed,
+            calls=native_owner.calls,
+            installed=native_owner.installed,
+            qualified_lengths=list(FULL_LENGTHS),
         )
     report["stage"] = "complete-production-full-codec-comparison"
 

@@ -1082,3 +1082,95 @@ def test_cli_restores_existing_sigterm_handler(monkeypatch, tmp_path, fails):
         assert signal.getsignal(signal.SIGTERM) is previous_handler
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+@pytest.mark.parametrize(
+    "changes,expected_id",
+    [
+        pytest.param({}, "offline-shape-fallback", id="fixed-offline-zero"),
+        pytest.param({"calls": 1}, None, id="out-of-domain-native-call-rejected"),
+        pytest.param({"voice": 324}, None, id="eligible-zero-rejected"),
+        pytest.param(
+            {"voice": 324, "calls": 1}, "direct-lt-real-full-affine", id="eligible-native"
+        ),
+        pytest.param({"closed": False}, None, id="owner-not-closed"),
+        pytest.param({"installed": 0}, None, id="owner-not-installed"),
+        pytest.param(
+            {"voice": 324, "calls": 1, "lengths": [1392, 1400, 1424, 1500, 1464]},
+            None,
+            id="domain-expanded",
+        ),
+        pytest.param(
+            {"voice": 324, "calls": 1, "lengths": [1392.0, 1400, 1424, 1500]},
+            None,
+            id="domain-not-integer",
+        ),
+        pytest.param({"voice": 324, "calls": 1, "lengths": None}, None, id="domain-missing"),
+        pytest.param({"bad_pcm": True}, None, id="offline-pcm-failure"),
+        pytest.param({"voice": 324, "calls": 1, "bad_pcm": True}, None, id="native-pcm-failure"),
+        pytest.param({"voice": 324, "calls": True}, None, id="native-call-count-not-integer"),
+    ],
+)
+async def test_direct_lt_offline_domain_keeps_independent_pcm_gate(
+    tmp_path, monkeypatch, changes, expected_id
+):
+    """The external worker's fallback scope must not become generic native qualification."""
+    from moss_speech_bench import correctness
+
+    voice = changes.get("voice", 342)
+    report = dict(
+        status="passed",
+        numerical_comparison_complete=True,
+        profile={"voice_prompt_tokens": voice},
+        voice_conditioning={"actual_shapes": {"prompt_token": [1, voice]}},
+        direct_lt=dict(
+            closed=changes.get("closed", True),
+            installed=changes.get("installed", 294),
+            calls=changes.get("calls", 0),
+            qualified_lengths=changes.get("lengths", [1392, 1400, 1424, 1500]),
+        ),
+        cases={
+            f"codes{count}": dict(status="passed", code_count=count) for count in (24, 32, 511, 512)
+        },
+    )
+    if changes.get("bad_pcm"):
+        report["cases"]["codes24"]["status"] = "failed"
+    reference = tmp_path / "reference.json"
+    write_json(reference, report)
+    providers = tmp_path / "providers"
+    providers.mkdir()
+    (providers / "entry.py").write_text(
+        "import json, os, sys\nfrom pathlib import Path\n"
+        "output = Path(sys.argv[1])\n"
+        "data = Path(os.environ['MOSS_CODEC_GOLDEN']).read_text()\n"
+        "(output / 'core-full-codec-comparison.json').write_text(data)\n"
+        "(output / 'origins.json').write_text(json.dumps({'fixture': [os.environ['MOSS_CORE_ROOT']]}))\n"
+    )
+    monkeypatch.setattr(correctness, "PROVIDERS", providers)
+    config = dict(
+        profile="direct-lt",
+        core_root=str(tmp_path),
+        candidate_python=sys.executable,
+        deployment={"codec_dtype": "float32"},
+        golden={
+            "C05": {"tensors": "unused"},
+            "C06": {"report": str(reference), "tensors": "unused"},
+        },
+    )
+    for key in ("model_path", "codec_path", "audio_en", "audio_zh", "voice_wav", "code_profile"):
+        config[key] = str(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    if expected_id is None:
+        with pytest.raises(AssertionError):
+            await correctness.provider("C06", config, output)
+    else:
+        result = await correctness.provider("C06", config, output)
+        assert result["status"] == "pass"
+        assert {check["id"] for check in result["checks"][:-1]} == {
+            "codes24",
+            "codes32",
+            "codes511",
+            "codes512",
+        }
+        assert result["checks"][-1]["id"] == expected_id
