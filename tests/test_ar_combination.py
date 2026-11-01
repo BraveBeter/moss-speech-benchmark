@@ -192,3 +192,19 @@ def test_native_actual_eager_request_can_qualify_without_graph(tmp_path):
         + "\nMOSS native norm eager request execution active requests=['owned']"
     )
     assert validate_activation(config, tmp_path / "proof")["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "selected", [list(FEATURES), list(FEATURES[:-1]), ["native-norm", "ar-host-metadata"]]
+)
+def test_combination_always_qualifies_factory_and_all_owner_cleanup(selected):
+    nodes = selected_nodes("C01", "ar-combination", True, optimizations=selected)
+    assert len(nodes) == len(set(nodes))
+    assert (
+        "tests/unit_test/moss_speech/test_config.py::test_ar_combination_factory_forwards_independent_options"
+        in nodes
+    )
+    assert (
+        "tests/unit_test/moss_speech/test_model.py::test_ar_cleanup_attempts_every_owner_and_preserves_first_error"
+        in nodes
+    )

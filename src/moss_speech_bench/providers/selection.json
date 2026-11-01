@@ -940,5 +940,9 @@
       "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[disabled-True]",
       "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[enabled-True]"
     ]
-  }
+  },
+  "C01-ar-combination": [
+    "tests/unit_test/moss_speech/test_config.py::test_ar_combination_factory_forwards_independent_options",
+    "tests/unit_test/moss_speech/test_model.py::test_ar_cleanup_attempts_every_owner_and_preserves_first_error"
+  ]
 }
