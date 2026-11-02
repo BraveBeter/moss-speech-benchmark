@@ -23,7 +23,7 @@ from .datasets import (
     load_workload,
 )
 from .reporting import code_identity_lines, collect_cell, report, summary_markdown
-from .storage import dumps, read_json, source_identity, write_json
+from .storage import digest, dumps, read_json, source_identity, write_json
 
 
 def parser():
@@ -62,7 +62,7 @@ def parser():
     group = p.add_mutually_exclusive_group()
     group.add_argument("--concurrency", type=int)
     group.add_argument("--concurrencies", help="Comma-separated concurrency sweep")
-    p.add_argument("--repeats", type=int)
+    p.add_argument("--repeats", type=int, help="Named suites require 3; custom defaults to 1")
     p.add_argument("--stream", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--timeout", type=float, default=300)
     p.add_argument(
@@ -172,13 +172,16 @@ async def run(args):
         if args.mode == "full"
         else [4]
     )
-    repeats = args.repeats if args.repeats is not None else 3 if args.mode == "full" else 1
+    named = args.mode != "custom"
+    repeats = args.repeats if args.repeats is not None else 3 if named else 1
     if not levels or any(c <= 0 for c in levels) or len(set(levels)) != len(levels):
         raise ValueError("Concurrency levels must be unique positive integers")
     if repeats <= 0 or not 0 < args.timeout < float("inf") or args.sample_rate <= 0:
         raise ValueError("Repeats, timeout and sample rate must be positive and finite")
-    if args.mode in ("quick", "daily") and (len(levels) != 1 or repeats != 1):
-        raise ValueError("Daily uses exactly one concurrency and one formal repeat")
+    if named and repeats != 3:
+        raise ValueError("Quick, Daily and Full require exactly three formal repeats")
+    if args.mode in ("quick", "daily") and len(levels) != 1:
+        raise ValueError("Quick and Daily use exactly one concurrency")
     datasets, warmup, sampling = load_workload(
         args.config,
         args.model,
@@ -204,6 +207,16 @@ async def run(args):
         for repeat in range(1, repeats + 1)
         for c in levels
     ]
+    warmups = {}
+    for cell in cells:
+        rows = list(warmup[0]) if warmup else []
+        if named:
+            rows += datasets[cell["dataset"]][0][: cell["concurrency"]]
+        if rows:
+            warmups[cell["id"]] = [
+                dict(row, id=f"warmup-{i}", source_id=row["id"]) for i, row in enumerate(rows)
+            ]
+            cell["warmup_expected"] = len(rows)
     if args.dry_run:
         return {
             "scope": "performance_only",
@@ -212,7 +225,7 @@ async def run(args):
             "time_budget_s": budget,
             "cells": cells,
             "formal_requests": sum(c["expected"] for c in cells),
-            "warmup_requests": len(warmup[0]) * len(cells) if warmup else 0,
+            "warmup_requests": sum(map(len, warmups.values())),
         }
     key = os.environ.get(args.api_key_env) if args.api_key_env else None
     if args.api_key_env and not key:
@@ -284,6 +297,14 @@ async def run(args):
         "levels": levels,
         "repeats": repeats,
         "warmup": warmup[1] if warmup else None,
+        "warmup_policy": "configured-plus-first-concurrency-per-cell-v1"
+        if named
+        else "configured-per-cell-v1",
+        "warmup_inputs": {
+            name: dict(expected=len(rows), samples_hash=digest(rows))
+            for name, rows in warmups.items()
+        },
+        "repeat_aggregation": "arithmetic-mean-of-repeat-metrics-v1",
         "client_source_hash": identity["source_hash"],
         "metric_version": "omni-f96b10-moss-client-v1",
     }
@@ -311,6 +332,12 @@ async def run(args):
             (root / "inputs" / f"{name}.jsonl").write_text(
                 "".join(dumps(row) + "\n" for row in rows)
             )
+        if warmups:
+            (root / "warmup-inputs").mkdir()
+            for name, rows in warmups.items():
+                (root / "warmup-inputs" / f"{name}.jsonl").write_text(
+                    "".join(dumps(row) + "\n" for row in rows)
+                )
         manifest = {
             "schema_version": 1,
             "started_at": datetime.now(timezone.utc).isoformat(),
@@ -350,12 +377,24 @@ async def run(args):
                 disable_tqdm=True,
                 timeout_s=args.timeout,
             )
-            if warmup:
+            if cell["id"] in warmups:
                 warm_client = ChatClient(
                     args.base_url, attempt / "warmup", sample_rate=args.sample_rate, api_key=key
                 )
-                warmed = await limited(BenchmarkRunner(config).run(warmup[0], warm_client.send))
-                if any(not r.is_success for r in warmed):
+                warm_runner = BenchmarkRunner(config)
+                warmed = await limited(warm_runner.run(warmups[cell["id"]], warm_client.send))
+                write_json(
+                    attempt / "warmup" / "timing.json",
+                    {
+                        "complete": True,
+                        "wall_clock_s": warm_runner.wall_clock_s,
+                        "result_hashes": {
+                            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                            for p in sorted((attempt / "warmup").glob("*.result.json"))
+                        },
+                    },
+                )
+                if len(warmed) != cell["warmup_expected"] or any(not r.is_success for r in warmed):
                     raise ValueError("Warmup failed; formal cohort not started")
             client = ChatClient(
                 args.base_url, attempt / "outputs", sample_rate=args.sample_rate, api_key=key

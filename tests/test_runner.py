@@ -213,12 +213,12 @@ async def test_daily_and_full_counts_without_service(tmp_path):
         )
     path = tmp_path / "all.json"
     write_json(path, {"datasets": specs})
-    for mode, expected in (("daily", 4600), ("full", 55200)):
+    for mode, expected in (("daily", 13800), ("full", 55200)):
         result = await run(
             args(path, "http://127.0.0.1:1", tmp_path / "unused", "--mode", mode, "--dry-run")
         )
         assert result["formal_requests"] == expected
-        assert result["warmup_requests"] == 0
+        assert result["warmup_requests"] == (72 if mode == "daily" else 522)
         assert not (tmp_path / "unused").exists()
     assert result["deferred_evaluations"]["codec_decoder"]["status"] == "deferred"
     specs.pop()

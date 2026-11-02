@@ -20,7 +20,8 @@ Mode: `<quick/daily/full/custom>`; recorded inference state: `<运行状态>`.
 
 性能阶段未执行，暂无性能记录。
 audio-s/s = 成功请求生成音频总秒数 / 本组墙钟秒数；QPS = 成功请求数 / 本组墙钟秒数。无音频或计时不完整记 N/A。
-E2E为完整响应耗时；TTFT为首个非空文本；TTFA为首个非空PCM（可能含静音）。分位数逐组计算。
+E2E为完整响应耗时；TTFT为首个非空文本；TTFA为首个非空PCM（可能含静音）。分位数逐组计算；另列相同数据集/任务/并发的三轮等权均值，均值不是合并分位数。
+预热单独归档于warmup.json，排除性能/质量分母；三轮未全部成功完整时平均为N/A，保留每轮失败/未执行/length。
 custom-json表示自定义固定样例，数据集链接指向本run冻结输入；原始测量编号保留在performance.json。
 
 ## 质量测试

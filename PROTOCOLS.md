@@ -1,3 +1,7 @@
+## v4 measurement protocol
+
+Quick/Daily/Full warm every dataset/task/concurrency/repeat before formal timing and require three repeats. Summaries retain each repeat and their arithmetic mean; only complete successful repeats qualify for the mean. Warmups are archived separately and excluded from performance and quality. Payload/prompt and quality rules remain those of v3. v4 requires fresh outputs/baselines; see README for counts and cache/budget boundaries.
+
 # MOSS-Speech evaluation protocols
 
 ## Current suite: moss-spoken-qa-v3

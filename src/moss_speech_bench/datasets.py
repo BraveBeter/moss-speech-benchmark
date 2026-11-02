@@ -13,7 +13,7 @@ QA_TASKS = ("s2t", "s2s")
 QUICK_SAMPLES = 20
 QUICK_INFER_BUDGET_S = 2040
 QUICK_SCORE_BUDGET_S = 180
-SUITE_VERSION = "moss-spoken-qa-v3"
+SUITE_VERSION = "moss-spoken-qa-v4"
 SHORT_ANSWER_PROMPT = {
     "name": "spoken-qa-short-en-v1",
     "system": "Answer the spoken question in English using only a short answer phrase. "

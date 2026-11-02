@@ -3,6 +3,7 @@
 import hashlib
 from dataclasses import fields
 from pathlib import Path
+from statistics import mean
 from urllib.parse import quote
 
 from ._vendor.metrics.performance import compute_speed_metrics
@@ -91,31 +92,38 @@ def summarize(rows, expected, wall_s):
     return summary
 
 
-def collect_cell(root, cell):
-    expected = cell["expected"]
+def collect_cell(root, cell, *, warmup=False):
+    expected = cell["warmup_expected"] if warmup else cell["expected"]
     if not cell["attempts"]:
         return [], summarize([], expected, None)
     attempt = root / cell["attempts"][-1]
-    rows = [read_json(p) for p in sorted((attempt / "outputs").glob("*.result.json"))]
+    output = attempt / ("warmup" if warmup else "outputs")
+    rows = [read_json(p) for p in sorted(output.glob("*.result.json"))]
     if len(rows) > expected or len({r["sample_id"] for r in rows}) != len(rows):
         raise ValueError("Duplicate/excess request artifacts")
     for row in rows:
         for name, expected_hash in row["output_hashes"].items():
-            path = attempt / "outputs" / name
+            path = output / name
             if (
-                path.parent != attempt / "outputs"
+                path.parent != output
                 or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash
             ):
                 raise ValueError(f"Artifact hash mismatch: {path}")
-    timing = read_json(attempt / "timing.json") if (attempt / "timing.json").exists() else {}
+    timing_path = (output if warmup else attempt) / "timing.json"
+    timing = read_json(timing_path) if timing_path.exists() else {}
     if timing.get("complete"):
         actual = {
             p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted((attempt / "outputs").glob("*.result.json"))
+            for p in sorted(output.glob("*.result.json"))
         }
         if actual != timing.get("result_hashes"):
             raise ValueError("Result ledger hash mismatch")
-    inputs = {r["id"]: r for r in read_jsonl(root / "inputs" / f"{cell['dataset']}.jsonl")}
+    input_path = (
+        root / "warmup-inputs" / f"{cell['id']}.jsonl"
+        if warmup
+        else root / "inputs" / f"{cell['dataset']}.jsonl"
+    )
+    inputs = {r["id"]: r for r in read_jsonl(input_path)}
     for row in rows:
         if row["sample_id"] not in inputs or row["payload_hash"] != digest(
             inputs[row["sample_id"]]["payload"]
@@ -124,11 +132,64 @@ def collect_cell(root, cell):
     wall = timing.get("wall_clock_s") if timing.get("complete") else None
     summary = summarize(rows, expected, wall)
     summary["measurement_complete"] = wall is not None and len(rows) == expected
+    if not warmup and cell.get("warmup_expected") and summary["measurement_complete"]:
+        _, warmed = collect_cell(root, cell, warmup=True)
+        if not warmed.get("measurement_complete") or warmed["succeeded"] != warmed["expected"]:
+            raise ValueError("Completed cell has no successful warmup")
     if wall is None:
         # Never fabricate throughput by summing request times after an interrupted run.
         for key in ("throughput_qps", "audio_throughput_s_per_s", "output_throughput"):
             summary[key] = None
     return rows, summary
+
+
+def average_repeats(manifest, performance):
+    """Equal-weight means of complete repeats, never pooled requests or partial rounds."""
+    groups = {}
+    for cell in manifest["cells"]:
+        key = f"{cell['dataset']}-c{cell['concurrency']}"
+        groups.setdefault(key, []).append(cell)
+    result = {}
+    repeats = manifest["contract"]["repeats"]
+    for key, cells in groups.items():
+        values = [performance[cell["id"]] for cell in cells]
+        completed = sum(bool(v.get("measurement_complete")) for v in values)
+        valid = sum(
+            bool(v.get("measurement_complete")) and v["succeeded"] == v["expected"] for v in values
+        )
+        complete = (
+            len(cells) == repeats
+            and sorted(c["repeat"] for c in cells) == list(range(1, repeats + 1))
+            and valid == repeats
+        )
+        result[key] = {
+            "dataset": cells[0]["dataset"],
+            "concurrency": cells[0]["concurrency"],
+            "cells": [c["id"] for c in cells],
+            "aggregation": "arithmetic-mean-of-repeat-metrics-v1",
+            "expected_repeats": repeats,
+            "completed_repeats": completed,
+            "valid_repeats": valid,
+            "measurement_complete": complete,
+            **{
+                field: sum(v[field] for v in values)
+                for field in (
+                    "expected",
+                    "attempted",
+                    "succeeded",
+                    "failed",
+                    "not_attempted",
+                    "length_count",
+                )
+            },
+            **{
+                metric: mean(v[metric] for v in values)
+                if complete and all(v.get(metric) is not None for v in values)
+                else None
+                for metric in METRICS
+            },
+        }
+    return result
 
 
 def _differences(a, b, prefix=""):
@@ -159,6 +220,10 @@ def _load_manifest(root):
         rows = read_jsonl(root / "inputs" / f"{name}.jsonl")
         if len(rows) != metadata["expected"] or digest(rows) != metadata["samples_hash"]:
             raise ValueError(f"Input manifest hash mismatch: {name}")
+    for name, metadata in manifest["contract"].get("warmup_inputs", {}).items():
+        rows = read_jsonl(root / "warmup-inputs" / f"{name}.jsonl")
+        if len(rows) != metadata["expected"] or digest(rows) != metadata["samples_hash"]:
+            raise ValueError(f"Warmup input manifest hash mismatch: {name}")
     return manifest
 
 
@@ -213,7 +278,7 @@ def dataset_columns(manifest, dataset_id):
     return dataset, modality
 
 
-def performance_table(manifest, performance):
+def performance_table(manifest, performance, *, averages=False):
     """Render the one compact performance table used by live and archived summaries."""
     columns = (
         ("latency_median_s", "E2E P50 (s)"),
@@ -229,7 +294,15 @@ def performance_table(manifest, performance):
         + " |",
         "|---|---|---:|---:|---:|" + "---:|" * len(columns),
     ]
-    for cell in manifest["cells"]:
+    cells = (
+        [
+            dict(value, id=key, repeat=f"均值 {value['valid_repeats']}/{value['expected_repeats']}")
+            for key, value in performance.items()
+        ]
+        if averages
+        else manifest["cells"]
+    )
+    for cell in cells:
         dataset, modality = dataset_columns(manifest, cell["dataset"])
         values = performance[cell["id"]]
         prefix = [
@@ -334,6 +407,19 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
     ]
     for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
         lines.extend(["", f"Deferred: {component}: {item['reason']} Full suite is incomplete."])
+    if manifest["contract"].get("repeat_aggregation") and performance:
+        lines.extend(
+            [
+                "",
+                "逐轮均值（相同数据集、任务、并发；每轮等权）：",
+                "",
+                *performance_table(manifest, average_repeats(manifest, performance), averages=True),
+                "",
+                "仅全部轮次计时完整且所有请求成功时给出均值；缺轮/失败/超时为 N/A。",
+                "P50/P95 均值为各轮分位数的算术平均，不是合并请求的分位数；QPS/audio-s/s 先逐轮计算再平均。",
+                "预热在每轮正式计时前完成，不计入性能或质量分母；记录见 [warmup.json](warmup.json)。",
+            ]
+        )
     quality_lines = quality_markdown(quality, manifest)
     quality_lines[0] = "## 质量测试"
     lines.extend(["", *quality_lines])
@@ -365,6 +451,16 @@ def report(directory, baseline=None, allow_difference=()):
         ledger.extend(dict(row, cell_id=cell["id"], attempt=cell["attempts"][-1]) for row in rows)
     (root / "requests.jsonl").write_text("".join(dumps(row) + "\n" for row in ledger))
     write_json(root / "performance.json", performance)
+    if manifest["contract"].get("repeat_aggregation"):
+        write_json(root / "performance-averages.json", average_repeats(manifest, performance))
+        write_json(
+            root / "warmup.json",
+            {
+                cell["id"]: collect_cell(root, cell, warmup=True)[1]
+                for cell in manifest["cells"]
+                if cell.get("warmup_expected")
+            },
+        )
     write_json(
         root / "summary.json",
         {
@@ -427,8 +523,21 @@ def report(directory, baseline=None, allow_difference=()):
             "|---|---|---:|---:|---:|---:|",
         ]
         base_cells = {cell["id"]: collect_cell(base_root, cell)[1] for cell in base["cells"]}
+        current_cells = dict(performance)
+        if manifest["contract"].get("repeat_aggregation") and base["contract"].get(
+            "repeat_aggregation"
+        ):
+            current_cells.update(
+                {
+                    key + "-mean": value
+                    for key, value in average_repeats(manifest, performance).items()
+                }
+            )
+            base_cells.update(
+                {key + "-mean": value for key, value in average_repeats(base, base_cells).items()}
+            )
         if compatible:
-            for key, current in performance.items():
+            for key, current in current_cells.items():
                 previous = base_cells.get(key, {})
                 if not current.get("measurement_complete") or not previous.get(
                     "measurement_complete"

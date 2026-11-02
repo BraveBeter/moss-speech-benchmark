@@ -71,13 +71,13 @@ async def test_quick_inference_cohort_and_resume_contract(server, tmp_path, corr
     url, state = server
     config = daily_workload(tmp_path)
     dry = await run(args(config, url, tmp_path / "unused", "--mode", "quick", "--dry-run"))
-    assert dry["formal_requests"] == 120 and dry["time_budget_s"] == 2040
+    assert dry["formal_requests"] == 360 and dry["time_budget_s"] == 2040
     correctness_stub["url"] = url
     a = args(
         config, url, tmp_path / "quick", "--mode", "quick", "--correctness-config", "fixture.json"
     )
     metrics = await run(a)
-    assert len(state["payloads"]) == 120 and state["peak"] == 4
+    assert len(state["payloads"]) == 432 and state["peak"] == 4
     assert all(m["expected"] == m["succeeded"] == 20 for m in metrics.values())
     manifest = read_json(a.output_dir / "manifest.json")
     for name, metadata in manifest["contract"]["datasets"].items():
@@ -89,7 +89,7 @@ async def test_quick_inference_cohort_and_resume_contract(server, tmp_path, corr
     assert "状态：pass；通过 9/9 组" in (a.output_dir / "summary.md").read_text()
     a.resume = True
     await run(a)
-    assert len(state["payloads"]) == 120
+    assert len(state["payloads"]) == 432
     assert score(a.output_dir)["time_budget_s"] == 180
     a.subset_seed = 99
     with pytest.raises(ValueError, match="contract mismatch"):
@@ -106,10 +106,10 @@ async def test_quick_inference_cohort_and_resume_contract(server, tmp_path, corr
             "--dry-run",
         )
     )
-    assert bigger["formal_requests"] == 300
+    assert bigger["formal_requests"] == 900
     with pytest.raises(ValueError, match="only supported"):
         await run(args(config, url, tmp_path / "unused", "--samples-per-dataset", "30"))
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="exactly three"):
         await run(args(config, url, tmp_path / "unused", "--mode", "quick", "--repeats", "2"))
 
 
@@ -186,8 +186,8 @@ async def test_installed_quick_dry_run(tmp_path):
     output, error = await process.communicate()
     assert process.returncode == 0, error.decode()
     data = json.loads(output)
-    assert data["mode"] == "quick" and data["formal_requests"] == 120
-    assert data["time_budget_s"] == 2040 and len(data["cells"]) == 6
+    assert data["mode"] == "quick" and data["formal_requests"] == 360
+    assert data["time_budget_s"] == 2040 and len(data["cells"]) == 18
     assert not (tmp_path / "unused").exists()
 
 
@@ -209,7 +209,7 @@ async def test_named_gate_blocks_http_and_proof_is_required(server, tmp_path, co
     correctness_stub["status"] = "pass"
     a.output_dir = tmp_path / "passed"
     await run(a)
-    assert len(state["payloads"]) == 120
+    assert len(state["payloads"]) == 432
     saved = read_json(a.output_dir / "summary.json")
     assert saved["correctness_status"] == "pass"
     (a.output_dir / "correctness/correctness.json").write_text("{}")
@@ -233,7 +233,7 @@ async def test_task_selection_and_quickly_alias(tmp_path):
             "--dry-run",
         )
     )
-    assert selected["mode"] == "quick" and selected["formal_requests"] == 60
+    assert selected["mode"] == "quick" and selected["formal_requests"] == 180
     for bad in ["s2s,s2s", "t2s", ""]:
         with pytest.raises(ValueError, match="tasks"):
             await run(
@@ -275,17 +275,17 @@ async def test_quick_preserves_outer_execution_records_and_rejects_prior_results
     saved = record.read_bytes()
     arguments = args(config, url, output, "--mode", "quick", "--correctness-config", "fixture.json")
     await run(arguments)
-    assert len(state["payloads"]) == 120 and record.read_bytes() == saved
+    assert len(state["payloads"]) == 432 and record.read_bytes() == saved
     with pytest.raises(ValueError, match="Output directory is not empty"):
         await run(arguments)
-    assert len(state["payloads"]) == 120
+    assert len(state["payloads"]) == 432
     bad = tmp_path / "execution-file"
     bad.mkdir()
     (bad / "execution").write_text("not a directory")
     arguments.output_dir = bad
     with pytest.raises(ValueError, match="Output directory is not empty"):
         await run(arguments)
-    assert len(state["payloads"]) == 120
+    assert len(state["payloads"]) == 432
 
 
 async def test_declared_server_must_match_correctness_candidate(
@@ -343,8 +343,8 @@ async def test_task_prompt_override_preserves_speech_cohort_and_rejects_resume(
         config, url, tmp_path / "quick", "--mode", "quick", "--correctness-config", "fixture.json"
     )
     metrics = await run(options)
-    assert len(state["payloads"]) == 120
-    assert sum(item["attempted"] for item in metrics.values()) == 120
+    assert len(state["payloads"]) == 432
+    assert sum(item["attempted"] for item in metrics.values()) == 360
     assert all(item["succeeded"] == 20 for item in metrics.values())
     value.pop("task_prompts")
     write_json(config, value)

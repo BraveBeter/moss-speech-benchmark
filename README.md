@@ -8,9 +8,9 @@
 
 | 模式 | 端到端数据 | 默认任务/请求 | Codec Decoder |
 |---|---|---|---|
-| Quick / Quickly | 三集各固定20个问题，可设20–50 | 同一问题各跑S2T、S2S，C4/一轮，共120请求 | 不运行 |
-| Daily | LLaMA Questions 300、TriviaQA 1000、WebQuestions 1000，全量2300问题 | S2T+S2S，C4/一轮，共4600请求 | 不运行 |
-| Full | 同上三个完整集合 | S2T+S2S，C1/C4/C8/C16、三轮，默认55200性能请求；评分选每个数据集/任务的一个测量段 | Seed-TTS-Eval EN1088+ZH2020，**deferred，未实现** |
+| Quick / Quickly | 三集各固定20个问题，可设20–50 | 同一问题各跑S2T、S2S，C4/三轮，共360请求（另72次预热） | 不运行 |
+| Daily | LLaMA Questions 300、TriviaQA 1000、WebQuestions 1000，全量2300问题 | S2T+S2S，C4/三轮，共13800请求（另72次预热） | 不运行 |
+| Full | 同上三个完整集合 | S2T+S2S，C1/C4/C8/C16、三轮，默认55200性能请求（另522次预热）；评分选每个数据集/任务的一个测量段 | Seed-TTS-Eval EN1088+ZH2020，**deferred，未实现** |
 
 Full 的 Decoder 流程尚未确定：只登记目标集合和暂缓原因，不加载 Seed 数据、不发送聊天请求代替 Codec 测试，也不声称整个 Full 通过。端到端部分正常执行，报告 `suite_status=incomplete`，实际执行退出码1；dry-run只展示计划，退出码0。
 
@@ -66,12 +66,12 @@ infer保存正确性JSON的hash，score/report会重新检查九项状态及产�
 moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
   --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-quick" --dry-run
 
-# 正确性通过后执行120条正式请求
+# 正确性通过后执行360条正式请求，每轮单独预热
 moss-speech-bench --mode quick --config examples/daily.json --model moss-speech \
   --base-url http://127.0.0.1:8000 --deployment deployment.local.json \
   --correctness-config correctness.local.json --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base-quick"
 
-# Daily/Full替换--mode；Full可显式修改扫描规模
+# Daily/Full替换--mode；Full可显式修改并发扫描；三种模式均固定三轮
 moss-speech-bench --mode full --config examples/daily.json --model moss-speech \
   --base-url http://127.0.0.1:8000 --deployment deployment.local.json \
   --correctness-config correctness.local.json --concurrencies 1,4,8,16 --repeats 3 \
@@ -91,11 +91,21 @@ moss-speech-bench --phase report --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/base
 
 Quick目标为包含前置正确性、推理、评分及服务准备在内约40分钟。默认infer调用预算2040秒（34分，含此调用中的正确性）、score预算180秒（3分），为外层准备留约3分；`--time-budget SECONDS`覆盖当前阶段。外层预先执行的gate、服务启动/排队不由客户端控制，必须在实际总时间中计入；单次评分模型调用也可能超过软预算。不能承诺所有硬件/首次编译都达标。需要硬截止时由外层Slurm时限控制；未完成一律partial，不以取消样本制造通过。
 
-可用`--samples-per-dataset 30`改成180请求，50改成300请求，40分钟目标需按实际负载重验。采样/最大输出预算保留配置值，不暗中减少生成长度。
+可用`--samples-per-dataset 30`改成540请求，50改成900请求，40分钟目标需按实际负载重验。采样/最大输出预算保留配置值，不暗中减少生成长度。
+
+## 预热与三轮平均
+
+Quick、Daily、Full 固定三轮（`--repeats 3`，其他值使用 custom）。每个数据集/任务/并发的每轮开始前，用该组前 `min(并发数, 样本数)` 个固定请求完成一批预热；请求参数、输出预算和并发与正式阶段一致。若配置了独立 `warmup`，保留它并额外执行这批任务匹配的预热。预热不是正确性 gate 或服务启动时的 Graph capture，三者均不能互相替代。
+
+预热成功后才开启本轮正式计时。预热输入冻结在 `warmup-inputs/`，原始结果和计时保存在各 attempt 的 `warmup/`，摘要在 `warmup.json`；其请求、时延、墙钟与输出不进入性能或质量统计，但消耗总时间预算。预热失败/超时会阻止该轮正式请求，保留失败与计划分母；resume 重跑未完成轮次时重新预热，已完成轮次不重发。默认预热会复用部分正式输入，也可能预填这些输入的缓存；三轮在同一服务进程运行，是热服务测量，不能视作三个独立冷启动。
+
+`performance.json` 保留各轮，`performance-averages.json` 和 summary 另列相同数据集/任务/并发下的等权算术平均。先计算每轮指标，再对三轮求平均：P50/P95 平均不是合并请求的分位数，QPS/audio-s/s 也不把三轮墙钟拼接。只有三轮均完整且所有请求成功时才显示平均；失败、缺轮、超时记 N/A，保留成功/计划请求、有效/计划轮次和 length 截断数。质量仍默认仅评分 C4/r1 的正式输出。
+
+套件升级为 v4；不能将旧无预热/单轮结果直接比较或续跑。Quick 的原2040秒软预算保持不变，三轮及预热可能耗尽它；可显式提供 `--time-budget`，必须在报告中保留实际预算，不以少跑轮次换取完成状态。约40分钟目标需在新协议下重新验证。
 
 ## 质量协议
 
-[PROTOCOLS.md](PROTOCOLS.md)定义当前 `moss-spoken-qa-v3` 与历史协议边界。三个集合的 S2T 默认使用 `spoken-qa-native-text-short-en-v1`：完整保留原生 `You are a helpful assistant. Respond with text outputs.`，再追加简短英文答案要求。S2S继续使用原 `spoken-qa-short-en-v1`，请求内容不变。命名套件的S2T即使配置了dataset/task system，也会保留该原生文字前缀；已有完整前缀不重复追加。有效prompt、内容/hash均进入归档，不包含参考答案。
+[PROTOCOLS.md](PROTOCOLS.md)定义当前 `moss-spoken-qa-v4` 与历史协议边界。三个集合的 S2T 默认使用 `spoken-qa-native-text-short-en-v1`：完整保留原生 `You are a helpful assistant. Respond with text outputs.`，再追加简短英文答案要求。S2S继续使用原 `spoken-qa-short-en-v1`，请求内容不变。命名套件的S2T即使配置了dataset/task system，也会保留该原生文字前缀；已有完整前缀不重复追加。有效prompt、内容/hash均进入归档，不包含参考答案。
 
 | 路径 | 离线指标 | 局限 |
 |---|---|---|
@@ -115,9 +125,9 @@ Qwen3-ASR-1.7B统一走官方CI同源HTTP协议，默认并发32；示例外层A
 - Latency：发送请求至完整接收，不含客户端并发排队；RTF：每请求Latency/实际PCM时长；audio-s/s及QPS分别以完整测量段墙钟为分母。保存Mean/P50/P95/P99、length截断、失败/未执行、usage及流式连续性指标。
 - 流式解析PCM16 little-endian单声道，默认24kHz，需与服务一致；非流式按默认WAV协议。事件/输出写盘属于整段墙钟，客户端CPU/磁盘可能限制吞吐。
 
-Summary统一使用[固定模板](SUMMARY_TEMPLATE.md)：先列被测/客户端分支和完整SHA，再依次展示正确性、性能、质量表格。性能表明确数据集、模态/语言、并发、轮次；请求数量合并为“成功/全部”，保留E2E P50、TTFT/TTFA P95、RTF Mean、audio-s/s和QPS。正确性仅展示本run绑定的证明，质量展示逐指标“评分/全部”；未执行的阶段留空表并说明状态，详细失败/未执行/截断仍在原JSON及请求记录。
+Summary统一使用[固定模板](SUMMARY_TEMPLATE.md)：先列被测/客户端分支和完整SHA，再依次展示正确性、逐轮性能与三轮平均、质量表格。性能表明确数据集、模态/语言、并发、轮次；请求数量合并为“成功/全部”，保留E2E P50、TTFT/TTFA P95、RTF Mean、audio-s/s和QPS。正确性仅展示本run绑定的证明，质量展示逐指标“评分/全部”；未执行的阶段留空表并说明状态，详细失败/未执行/截断仍在原JSON及请求记录。
 
-每次运行只有一个`benchmark-results/<run_id>/`，以根`summary.md`为唯一主入口。每个run保存 `manifest.json`、`correctness/`、`inputs/`、分数据集/任务/并发/轮次的`cells/`、`requests.jsonl`、原始文本/WAV/事件、`performance.json`、`quality.json`及`summary.md/json`。Full另显示Codec deferred及不完整状态。性能原始文件不因质量评分而改变。外层脚本、配置、环境/Slurm日志和验证记录放本run的`execution/`；必要的详细分析放`analysis/`，不在源码仓库另存报告副本。
+每次运行只有一个`benchmark-results/<run_id>/`，以根`summary.md`为唯一主入口。每个run保存 `manifest.json`、`correctness/`、`inputs/`、分数据集/任务/并发/轮次的`cells/`、`requests.jsonl`、原始文本/WAV/事件、`performance.json`、`performance-averages.json`、`warmup.json`、`quality.json`及`summary.md/json`。Full另显示Codec deferred及不完整状态。性能原始文件不因质量评分而改变。外层脚本、配置、环境/Slurm日志和验证记录放本run的`execution/`；必要的详细分析放`analysis/`，不在源码仓库另存报告副本。
 
 `--resume`仅跳过完整且hash有效的测量段；中断段新建attempt全量重跑，不拼接吞吐墙钟。原错误/部分输出保留。baseline通过`--baseline PATH`比较，核对完整输入/任务/部署/采样/指标及评分约定；实验变量需显式`--allow-difference FIELD`。不同suite版本不自动比较。
 
