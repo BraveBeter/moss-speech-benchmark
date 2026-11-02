@@ -159,7 +159,7 @@ Named speech-QA workload JSON may set `task_prompts` to customize one task. S2T 
 }
 ```
 
-Each task prompt takes precedence over the dataset prompt. Named S2T preserves the native text prefix; `custom` diagnostics retain their explicitly configured raw prompts. The effective prompt and payload hashes enter the measurement contract. Suite v3 changes S2T requests, so use a fresh run and baseline; old v2 outputs are not rewritten or resumed under v3. Empty-output failure rules remain unchanged.
+Each task prompt takes precedence over the dataset prompt. Named S2T preserves the native text prefix; `custom` diagnostics retain their explicitly configured raw prompts. The effective prompt and payload hashes enter the measurement contract. The S2T request repair was introduced in v3; current v4 also requires mandatory warmups and three-repeat averaging. Use fresh v4 outputs and baselines; historical v2/v3 results are preserved. Empty-output failure rules remain unchanged.
 
 ## Custom mixed-output measurements
 

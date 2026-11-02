@@ -1,10 +1,10 @@
+# MOSS-Speech evaluation protocols
+
 ## v4 measurement protocol
 
 Quick/Daily/Full warm every dataset/task/concurrency/repeat before formal timing and require three repeats. Summaries retain each repeat and their arithmetic mean; only complete successful repeats qualify for the mean. Warmups are archived separately and excluded from performance and quality. Payload/prompt and quality rules remain those of v3. v4 requires fresh outputs/baselines; see README for counts and cache/budget boundaries.
 
-# MOSS-Speech evaluation protocols
-
-## Current suite: moss-spoken-qa-v3
+## Current suite: moss-spoken-qa-v4
 
 Quick, Daily and Full begin with the existing C00–C08 correctness suite.
 Inference is blocked unless all nine gates pass. Correctness artifacts and hashes
@@ -13,12 +13,14 @@ The fixed eager-base profile is not certification for arbitrary optimizations.
 
 End-to-end datasets are exclusively OpenAudioBench LLaMA Questions (300),
 TriviaQA (1000) and WebQuestions (1000). Default tasks are both S2T and S2S.
-Daily uses all 2300 questions, 4600 requests. Full scans the same complete data
-at C1/C4/C8/C16, three repeats by default. Each dataset/task has a separate cell;
+Daily uses all 2300 questions in both tasks, three repeats: 13800 formal requests
+and 72 warmups. Full scans the same complete data at C1/C4/C8/C16,
+three repeats: 55200 formal requests and 522 warmups. Each dataset/task has a separate cell;
 quality normally selects C4/r1 instead of rescoring every performance repeat.
 
 Quick selects 20 fixed questions per dataset by source ID hash and seed42,
-then evaluates each in both modalities: 60 questions, 120 requests.
+then evaluates each in both modalities for three repeats: 60 unique questions,
+360 formal requests and 72 warmups.
 The same source questions/audio must be used in S2T and S2S. Source manifests,
 IDs, revisions, actual prompts, sampling and output hashes remain reproducible.
 20–50 questions per dataset are configurable; a larger cohort needs a new
@@ -33,8 +35,9 @@ S2S keeps the original `spoken-qa-short-en-v1` request unchanged. Custom diagnos
 mode preserves explicitly configured raw prompts for historical reproduction.
 
 The effective prompt contains no gold answer and is frozen with its hash in the
-input contract. Suite v3 requires a fresh run and baseline; historical v2 outputs
-and scores stay unchanged. This repair targets output modality, not answer
+input contract. The S2T payload repair was introduced in v3. Current v4 adds mandatory warmups
+and three-repeat averaging and requires fresh outputs and baselines; historical
+v2/v3 outputs and scores stay unchanged. This repair targets output modality, not answer
 correctness or the unresolved repeated-text/long-answer cases. Do not silently truncate generated answers,
 change max_tokens, or remove difficult examples to improve runtime or scores.
 
