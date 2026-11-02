@@ -969,5 +969,53 @@
       "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[False]",
       "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget[True]"
     ]
-  }
+  },
+  "C01-ar-serial-decode-graph": [
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_preserves_rows_and_owned_outputs",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_cpu-value0]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_cpu-value1]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_cpu-value2]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_cpu-value3]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_cpu-None]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_cpu-value5]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens-value6]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens-value7]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[seq_lens_sum-31]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[input_ids-value9]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[input_ids-value10]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[input_ids-value11]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[positions-value12]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[req_pool_indices-value13]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[req_pool_indices-value14]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[out_cache_loc-value15]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_rejects_entire_batch_before_mutation[out_cache_loc-value16]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_propagates_partial_failure",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[disabled]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[batch3]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[training]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[closed]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[identity]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[prefill]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[hook]",
+    "tests/unit_test/moss_speech/test_decode_graphs.py::test_serial_replay_keeps_default_and_runtime_fallbacks[embedding]",
+    "tests/unit_test/moss_speech/test_config.py::test_serial_decode_graph_config_and_factory_require_explicit_opt_in"
+  ],
+  "C03-ar-serial-decode-graph": [
+    "tests/unit_test/moss_speech/test_model.py::test_full_decode_graph_matches_eager_and_owns_outputs",
+    "tests/unit_test/moss_speech/test_model.py::test_serial_decode_graph_matches_eager_and_owns_outputs"
+  ],
+  "C01-codec-bias-broadcast": [
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_flag_survives_stage_configuration_roundtrip",
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_factory_propagates_to_both_decoders",
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_configuration_rejects_coercion[0]",
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_configuration_rejects_coercion[1]",
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_configuration_rejects_coercion[true]",
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_configuration_rejects_coercion[false]",
+    "tests/unit_test/moss_speech/test_config.py::test_bias_broadcast_configuration_rejects_coercion[None]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bias_broadcast_cpu_fallback_preserves_public_preparer"
+  ],
+  "C03-codec-bias-broadcast": [
+    "tests/unit_test/moss_speech/test_codec.py::test_bias_broadcast_cuda_exact_live_inputs",
+    "tests/unit_test/moss_speech/test_codec.py::test_bias_broadcast_trained_streaming_ownership"
+  ]
 }

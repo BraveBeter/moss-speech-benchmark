@@ -14,6 +14,8 @@ FEATURES = (
     "mixed-modalities",
 )
 MARKERS = {
+    "codec-bias-broadcast": "MOSS_CODEC_BIAS_BROADCAST_ACTIVE",
+    "ar-serial-decode-graph": "serial batch decode graph replay active",
     "ar-batched-rope": "batched RoPE reuse active",
     "ar-decode-graph": "full decode graph replay active",
     "ar-projection-graph": "projection graph replay active",
@@ -153,6 +155,17 @@ def validate_activation(config, output, require=True):
     observed = dict(counts)
     if "native-norm" in selected:
         observed["native-norm"] = native_graph_replays + native_eager_requests
+    serial_batches = {}
+    if "ar-serial-decode-graph" in selected:
+        marker = MARKERS["ar-serial-decode-graph"]
+        serial_batches = {
+            str(batch): sum(
+                marker in line and bool(re.search(r"\bbatch=" + str(batch) + r"\b", line))
+                for line in text.splitlines()
+            )
+            for batch in (2, 4)
+        }
+        observed["ar-serial-decode-graph"] = min(serial_batches.values())
     missing = [feature for feature in required if not observed[feature]]
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -164,6 +177,7 @@ def validate_activation(config, output, require=True):
         offset=offset,
         bytes=len(payload),
         sha256=hashlib.sha256(payload).hexdigest(),
+        serial_decode_batches=serial_batches,
         native_serving_evidence=dict(
             graph_replays=native_graph_replays, eager_requests=native_eager_requests
         ),
@@ -196,10 +210,13 @@ def main():
     parser.add_argument("--output", required=True)
     arguments = parser.parse_args()
     config = load_suite(arguments.config)
-    if config["profile"] not in ("ar-combination", "ar-batched-rope"):
-        parser.error(
-            "Activation audit requires an explicit ar-combination or ar-batched-rope configuration"
-        )
+    if config["profile"] not in (
+        "ar-combination",
+        "ar-batched-rope",
+        "ar-serial-decode-graph",
+        "codec-bias-broadcast",
+    ):
+        parser.error("Activation audit requires an explicit qualified AR configuration")
     validate_activation(config, arguments.output)
 
 

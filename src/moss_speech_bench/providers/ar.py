@@ -21,9 +21,11 @@ from types import SimpleNamespace
 if __package__:
     from .ar_combination import features
     from .batched_rope import validate_qualification as validate_batched_rope
+    from .serial_decode_graph import validate_qualification as validate_serial_decode_graph
 else:
     from ar_combination import features
     from batched_rope import validate_qualification as validate_batched_rope
+    from serial_decode_graph import validate_qualification as validate_serial_decode_graph
 
 PROFILE = {
     "profile": os.environ.get("MOSS_CORRECTNESS_PROFILE"),
@@ -149,6 +151,35 @@ def compare_logits(actual, expected, policy: dict) -> dict:
         },
         "hf_top1_margin": float(expected_values[0] - expected_values[1]),
     }
+
+
+def load_cached_reference(arguments):
+    """Load a separately pinned phase-matched oracle; never derive it from native outputs."""
+    from safetensors.torch import load_file
+
+    if __package__:
+        from .cached_reference import validate_cached_reference
+    else:
+        from cached_reference import validate_cached_reference
+
+    report_path = Path(os.environ["MOSS_CACHED_HF_REPORT"])
+    tensor_path = Path(os.environ["MOSS_CACHED_HF_TENSORS"])
+    validate_cached_reference(
+        report_path,
+        tensor_path,
+        arguments.inputs_json,
+        arguments.hf_output_dir / "hf-weight-reference.json",
+        arguments.policy_json,
+    )
+    identity = dict(
+        report=str(report_path),
+        report_sha256=digest(report_path),
+        tensors=str(tensor_path),
+        tensors_sha256=digest(tensor_path),
+        compute_phase="cached_decode",
+        original_prefill_reference_retained=True,
+    )
+    return identity, load_file(str(tensor_path), device="cpu")
 
 
 def run(
@@ -334,6 +365,12 @@ def run(
                     token_to_kv_pool=kv_pool,
                 )
             )
+            if PROFILE["profile"] == "ar-serial-decode-graph":
+                from tests.unit_test.fixtures.moss_speech_model import assert_serial_decode_graph
+
+                report["serial_decode_graph"] = assert_serial_decode_graph(model, capacity=1024)
+                write_json(report_path, report)
+                validate_serial_decode_graph(report["serial_decode_graph"])
             if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-decode-graph":
                 from tests.unit_test.fixtures.moss_speech_model import assert_full_decode_graph
 
@@ -361,6 +398,8 @@ def run(
                     name: torch.tensor(case["input_ids"], dtype=torch.long, device=device)
                     for name, case in report["cases"].items()
                 }
+                cached_identity, cached_vectors = load_cached_reference(arguments)
+                report["cached_decode_reference"] = cached_identity
                 proof, outputs = qualify_batched_rope(model, grids)
                 report["batched_rope"] = proof
                 proof["cases"] = {}
@@ -378,7 +417,7 @@ def run(
                             key = f"{name}.{modality}_last_logits"
                             batched_vectors[f"b{batch}.{key}"] = vector
                             proof["cases"][batch][name][modality] = compare_logits(
-                                vector, expected_vectors[key], report["policy"]
+                                vector, cached_vectors[key], report["policy"]
                             )
                 batched_path = tensor_path.with_name("batched-rope-logits.safetensors")
                 save_file(batched_vectors, str(batched_path))

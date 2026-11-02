@@ -246,3 +246,50 @@ python -m moss_speech_bench.providers.ar_combination \
 Use the same frozen client commit, input hashes, GPU UUID, dtype, voice, seed and explicit token budget for new eager-base, selected single-strategy and combination measurements. Run each final deployment's C00–C08 before named Quick. Keep standard Quick C4, four-modality C1 and mixed C2 in separate run directories. Mixed results must retain pair completion time and individual latency/TTFA/RTF tradeoffs. Previous single-strategy measurements are historical evidence and do not count as new combination results.
 
 A projection batch profile is part of the measured deployment identity. B1 results do not establish B4 end-to-end benefit; tiny-model CUDA tests for B1–B4 establish correctness only. Select performance configurations from independently demonstrated workloads and retest each proposed stack.
+
+### Serial B2/B4 full-decode graph extension
+
+`profile: "ar-serial-decode-graph"` requires `context_remaining: true` and explicit
+`deployment.decode_graph_serial_batch`, `deployment.decode_graph`, and
+`deployment.ar_graph` all true. Other optimization combinations are rejected.
+C01 retains baseline regressions and adds transaction/ownership/error cases; C03
+retains B1 graph qualification and adds actual serial B2/B4 CUDA qualification.
+C04 preserves the original eight independent HF full-prefill comparisons and
+requires the full-trained-checkpoint serial fixture: actual B2/B4 execution,
+complete hidden/dual-head/all40KV exactness, output ownership, all-row rejection,
+runtime guards, boundary fallback and no partial-failure eager retry. No local
+timing or eager-only execution substitutes for those checks.
+
+C08 archives serving activation observations but does not assume its isolation
+workload creates both batch sizes. **After Quick**, run the activation audit
+command above against the same fresh service log. It must observe actual
+`serial batch decode graph replay active batch=2` **and** `batch=4`; startup-only,
+B1-only, one batch size or stale log slices fail. No E2E closure is claimed until
+this final audit and complete-output comparisons pass. This extension does not
+relax existing fixed-HF tolerances or change old profiles.
+
+### Phase-matched independent HF decode reference
+
+The `ar-batched-rope` C04 extension additionally requires
+`golden.C04_cached_decode.{report,tensors}`, both pinned in the C00 asset allowlist.
+This is an independently exported HF N-1-row prefill plus one cached decode step
+on the same eight canonical inputs, official revision, BF16/SDPA settings and seed.
+All three cache banks, positions, full input grids, module hashes and tensor bytes
+are validated. Actual B2/B4 decode heads are checked against this phase-matched
+reference with the unchanged finite/allclose/raw-top1 rules. The original HF
+full-prefill reference and all serial checks remain mandatory; it is not replaced
+by candidate/base outputs. Historical failed runs remain failed.
+
+### Live Codec attention-bias broadcasting
+
+`profile: "codec-bias-broadcast"` requires `context_remaining: true` and explicit
+`deployment.broadcast_attention_bias: true`; other optimization combinations are
+rejected. C01 adds strict config/factory/public-method fallback regressions; C03
+adds actual-CUDA live-bias equality and full trained streaming PCM/intermediate/
+request-state isolation checks, preserving the report in its gate directory.
+C06 enables the real `AudioDecoder` production flag during the original fixed-HF
+full-PCM comparisons, requiring all56 installed processors to execute and retain
+zero head strides. Constructor flags or eager fallback alone cannot qualify it.
+After Quick, the fresh serving activation audit must observe the actual
+`MOSS_CODEC_BIAS_BROADCAST_ACTIVE` marker. No reference tolerance, backend policy,
+input, sampling or named Quick workload is changed.

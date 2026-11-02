@@ -69,6 +69,8 @@ def expected_tests(
             profile
             in (
                 "ar-batched-rope",
+                "ar-serial-decode-graph",
+                "codec-bias-broadcast",
                 "ar-prefix-cache",
                 "ar-sampling-history",
                 "ar-host-metadata",

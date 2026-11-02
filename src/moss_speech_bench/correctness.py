@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
-from .providers import batched_rope
+from .providers import batched_rope, codec_bias_broadcast, serial_decode_graph
 from .providers.ar_combination import (
     features,
     validate,
@@ -66,10 +66,24 @@ def load_suite(path):
     if type(config.get("context_remaining", False)) is not bool:
         raise ValueError("context_remaining requires a boolean")
     combination = profile == "ar-combination"
+    if (
+        deployment.get("broadcast_attention_bias", False) is not False
+        and profile != "codec-bias-broadcast"
+    ):
+        raise ValueError("Enabled deployment requires profile codec-bias-broadcast")
+    if (
+        deployment.get("decode_graph_serial_batch", False) is not False
+        and profile != "ar-serial-decode-graph"
+    ):
+        raise ValueError("Enabled deployment requires profile ar-serial-decode-graph")
     if deployment.get("decode_rope_reuse", False) is not False and profile != "ar-batched-rope":
         raise ValueError("Enabled deployment requires profile ar-batched-rope")
     if profile == "ar-batched-rope":
         batched_rope.validate(config)
+    elif profile == "ar-serial-decode-graph":
+        serial_decode_graph.validate(config)
+    elif profile == "codec-bias-broadcast":
+        codec_bias_broadcast.validate(config)
     elif combination:
         validate(config)
     elif profile in activation:
@@ -192,6 +206,21 @@ def preflight(config):
             }
         if "tensors" in golden:
             assert file_hash(golden["tensors"]) == reference["tensor_artifact_sha256"]
+    if config["profile"] == "ar-batched-rope":
+        from .providers.cached_reference import validate_cached_reference
+
+        cached = config["golden"]["C04_cached_decode"]
+        assert set(cached) == {"report", "tensors"}, "Incomplete cached HF reference"
+        assert all(Path(value).resolve() in listed for value in cached.values()), (
+            "Unpinned cached HF reference"
+        )
+        validate_cached_reference(
+            cached["report"],
+            cached["tensors"],
+            config["golden"]["C02"]["report"],
+            config["golden"]["C04"]["report"],
+            PROVIDERS / "policy.json",
+        )
     model = Path(config["model_path"])
     index = read_json(model / "model.safetensors.index.json")
     assert all((model / name).resolve() in listed for name in set(index["weight_map"].values())), (
@@ -339,7 +368,10 @@ async def provider(gate, config, output):
             "ar_dtype": "bfloat16",
             "attention": "torch_native",
             "ar_tp": 1,
-            "ar_graph": bool(set(features(config)) & {"ar-decode-graph", "context-prefill-graph"})
+            "ar_graph": bool(
+                set(features(config))
+                & {"ar-decode-graph", "ar-serial-decode-graph", "context-prefill-graph"}
+            )
             or (
                 config["profile"] == "ar-combination" and "ar-projection-graph" in features(config)
             ),
@@ -390,6 +422,8 @@ async def provider(gate, config, output):
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
         MOSS_AR_OPTIMIZATIONS=json.dumps(config.get("ar_optimizations", [])),
+        MOSS_CACHED_HF_REPORT=config["golden"].get("C04_cached_decode", {}).get("report", ""),
+        MOSS_CACHED_HF_TENSORS=config["golden"].get("C04_cached_decode", {}).get("tensors", ""),
         MOSS_AR_PROJECTION_BATCH=str(config.get("projection_graph_batch_size") or 0),
         MOSS_CORRECTNESS_TEST_SUITE=config.get("test_suite", "legacy"),
         MOSS_CONTEXT_REMAINING="1"
@@ -404,6 +438,7 @@ async def provider(gate, config, output):
         MOSS_NATIVE_TAIL_SOURCE=config.get("native_tail_source", ""),
         MOSS_NATIVE_TAIL_ABI=config.get("native_tail_abi", ""),
         MOSS_CODEC_PATH=config["codec_path"],
+        MOSS_BIAS_BROADCAST_REPORT=str(output / "bias-broadcast-streaming.json"),
         PYTHONPATH=config["core_root"],
         PATH=str(Path(python).parent) + os.pathsep + os.environ.get("PATH", ""),
         HF_HUB_OFFLINE="1",
@@ -506,6 +541,11 @@ async def provider(gate, config, output):
         report = read_json(output / filenames[gate])
         batched_rope.validate_qualification(report["batched_rope"], list(report["cases"]))
         checks.append(dict(id="actual-b2-b4-hf-full-heads-exact-kv", status="pass"))
+    if gate == "C04" and config["profile"] == "ar-serial-decode-graph":
+        serial_decode_graph.validate_qualification(
+            read_json(output / filenames[gate])["serial_decode_graph"]
+        )
+        checks.append(dict(id="actual-serial-b2-b4-full-heads-kv-ownership", status="pass"))
     if gate == "C04" and config["profile"] == "ar-combination":
         validate_qualification(
             read_json(output / filenames[gate])["ar_combination"], features(config)
@@ -530,6 +570,11 @@ async def provider(gate, config, output):
                 for row in reuse
             )
             checks.append(dict(id=name + ":cached-prefill-exact", status="pass"))
+    if gate == "C06" and config["profile"] == "codec-bias-broadcast":
+        codec_bias_broadcast.validate_qualification(
+            read_json(output / filenames[gate])["bias_broadcast"]
+        )
+        checks.append(dict(id="actual-offline-bias-broadcast-all-processors", status="pass"))
     if gate == "C06" and config["profile"] == "direct-lt":
         report = read_json(output / filenames[gate])
         actual = report["direct_lt"]
@@ -701,7 +746,13 @@ async def run_correctness(path, output, selected=None, resume=False):
                     result = await run_http(gate, http_config, folder)
                     if (
                         gate == "C08"
-                        and config["profile"] in ("ar-combination", "ar-batched-rope")
+                        and config["profile"]
+                        in (
+                            "ar-combination",
+                            "ar-batched-rope",
+                            "ar-serial-decode-graph",
+                            "codec-bias-broadcast",
+                        )
                         and result["status"] == "pass"
                     ):
                         result["service_activation"] = validate_activation(

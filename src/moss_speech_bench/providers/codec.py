@@ -285,7 +285,11 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
     write_json(output_json, report)
     torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
-    decoder = AudioDecoder(root / "flow/flow.pt", root / "flow/hift.pt", device=device).eval()
+    bias_broadcast = os.environ.get("MOSS_CORRECTNESS_PROFILE") == "codec-bias-broadcast"
+    decoder_options = {"broadcast_attention_bias": True} if bias_broadcast else {}
+    decoder = AudioDecoder(
+        root / "flow/flow.pt", root / "flow/hift.pt", device=device, **decoder_options
+    ).eval()
     native_owner = None
     if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "direct-lt":
         from sglang_omni.models.moss_speech.components.cfm_direct_lt import (
@@ -527,6 +531,19 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
             installed=native_owner.installed,
             qualified_lengths=list(FULL_LENGTHS),
         )
+    if bias_broadcast:
+        processors = decoder.bias_broadcast_processors
+        report["bias_broadcast"] = dict(
+            installed=len(processors),
+            calls=[p.broadcast_calls for p in processors],
+            head_strides=[p.last_head_stride for p in processors],
+            fallback_calls=[p.fallback_calls for p in processors],
+        )
+        if __package__:
+            from .codec_bias_broadcast import validate_qualification
+        else:
+            from codec_bias_broadcast import validate_qualification
+        validate_qualification(report["bias_broadcast"])
     report["stage"] = "complete-production-full-codec-comparison"
 
 
