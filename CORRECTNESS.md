@@ -125,7 +125,7 @@ Providers require a Python 3.12 candidate runtime with the target dependencies.
 CPU lanes must run on a compatible node; configure C01/C02 launchers as CPU-only
 Slurm tasks (e.g. `--gres=none`) when the login-node ABI differs. Inside the job,
 the entry sets CPU-engine mode and hides CUDA before imports. GPU lanes clear
-that override and require a Slurm allocation. The interpreter and launch prefix
+that override and require a Slurm allocation or an explicit local allocation. The interpreter and launch prefix
 are explicit argv, never shell snippets. The scheduler and GPU budget are owned
 by the outer workflow; the client does not allocate GPUs without configuration.
 
@@ -293,3 +293,7 @@ zero head strides. Constructor flags or eager fallback alone cannot qualify it.
 After Quick, the fresh serving activation audit must observe the actual
 `MOSS_CODEC_BIAS_BROADCAST_ACTIVE` marker. No reference tolerance, backend policy,
 input, sampling or named Quick workload is changed.
+
+## Operator-owned local GPUs
+
+On a dedicated host/container without Slurm, explicitly add `local_gpu_allocation: {"devices": [1], "authorization": "operator authorization for this run"}` to the correctness configuration. The external launcher must reserve those devices and use the same visible devices for serving. Providers set and validate CUDA_VISIBLE_DEVICES, require usable CUDA, and archive device properties and the declaration in each GPU gate. This is operator-supplied allocation metadata, not a scheduler reservation. Never fabricate SLURM_JOB_ID; existing Slurm configurations still work. Numerical checks, pinned assets, source cleanliness and C00–C08 coverage remain unchanged.

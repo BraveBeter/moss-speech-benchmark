@@ -34,6 +34,8 @@ def file_hash(path):
 
 
 def load_suite(path):
+    from .providers.allocation import local_devices
+
     path = Path(path).resolve()
     config = read_json(path)
     workspace = (path.parent / config["workspace_root"]).resolve()
@@ -49,6 +51,7 @@ def load_suite(path):
         return value
 
     config = resolve(config)
+    local_devices(config)
     if not re.fullmatch("[0-9a-f]{40}", config.get("core_sha", "")):
         raise ValueError("Correctness requires an explicit full candidate SHA")
     profile = config.get("profile")
@@ -449,6 +452,15 @@ async def provider(gate, config, output):
         env.update(SGLANG_USE_CPU_ENGINE="1", CUDA_VISIBLE_DEVICES="")
     else:
         env.pop("SGLANG_USE_CPU_ENGINE", None)
+        from .providers.allocation import local_devices
+
+        devices = local_devices(config)
+        if devices is not None:
+            env.update(
+                CUDA_VISIBLE_DEVICES=devices,
+                MOSS_LOCAL_GPU_DEVICES=devices,
+                MOSS_LOCAL_GPU_AUTHORIZATION=config["local_gpu_allocation"]["authorization"],
+            )
     argv = [*spec.get("launcher", []), python, str(PROVIDERS / "entry.py"), str(output), gate]
     filenames = {
         "C02": "processor.json",

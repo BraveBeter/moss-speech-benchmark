@@ -19,10 +19,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 if __package__:
+    from .allocation import require_gpu_allocation
     from .ar_combination import features
     from .batched_rope import validate_qualification as validate_batched_rope
     from .serial_decode_graph import validate_qualification as validate_serial_decode_graph
 else:
+    from allocation import require_gpu_allocation
     from ar_combination import features
     from batched_rope import validate_qualification as validate_batched_rope
     from serial_decode_graph import validate_qualification as validate_serial_decode_graph
@@ -581,7 +583,7 @@ def main() -> int:
         parser.error("max-seconds must be 1..840")
     else:
         pass
-    assert os.environ.get("SLURM_JOB_ID"), "Run this probe inside an authorized Slurm allocation"
+    require_gpu_allocation()
     assert os.environ.get("SGLANG_USE_CPU_ENGINE") != "1", (
         "Native GPU platform must be selected before imports"
     )
@@ -646,7 +648,8 @@ def main() -> int:
         "python": sys.version,
         "platform": platform.platform(),
         "package_versions": versions,
-        "slurm_job_id": os.environ["SLURM_JOB_ID"],
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "local_gpu_devices": os.environ.get("MOSS_LOCAL_GPU_DEVICES"),
         "model_revision": MODEL_REVISION,
         "model_path": str(model_path),
         "inputs_json_sha256": digest(arguments.inputs_json),

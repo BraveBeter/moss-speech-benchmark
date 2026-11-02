@@ -7,6 +7,7 @@ import runpy
 import sys
 from pathlib import Path
 
+from allocation import require_gpu_allocation
 from identity import collect_origins
 from selection import expected_tests
 
@@ -28,7 +29,26 @@ if mode in ("C01", "C02"):
 else:
     os.environ.pop("SGLANG_USE_CPU_ENGINE", None)
 if mode in ("C03", "C04", "C05", "C06"):
-    assert os.environ.get("SLURM_JOB_ID"), "CUDA providers require Slurm allocation"
+    require_gpu_allocation()
+    import torch
+
+    assert torch.cuda.is_available(), "Allocated CUDA devices are unavailable"
+    (output / "gpu-allocation.json").write_text(
+        json.dumps(
+            {
+                "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                "local_devices": os.environ.get("MOSS_LOCAL_GPU_DEVICES"),
+                "authorization": os.environ.get("MOSS_LOCAL_GPU_AUTHORIZATION"),
+                "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "devices": [
+                    str(torch.cuda.get_device_properties(i))
+                    for i in range(torch.cuda.device_count())
+                ],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 try:
     importlib.import_module("sglang_omni")
     origins()
@@ -81,8 +101,6 @@ try:
 
             run(output)
     else:
-        if mode in ("C04", "C05", "C06"):
-            assert os.environ.get("SLURM_JOB_ID"), "GPU provider requires an allocated Slurm job"
         script = Path(__file__).with_name(
             {"C02": "processor.py", "C04": "ar.py", "C05": "encoder.py", "C06": "codec.py"}[mode]
         )
