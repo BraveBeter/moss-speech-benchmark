@@ -42,6 +42,18 @@ def proof():
     )
 
 
+def test_new_eager_retains_serial_qualification_and_empty_audio_regressions(tmp_path):
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    config = load_suite(configuration(tmp_path, test_suite="eager-bugs"))
+    cpu = selected_nodes("C01", config["profile"], True, config["test_suite"])
+    cuda = selected_nodes("C03", config["profile"], True, config["test_suite"])
+    assert not any("collat" in node for node in cpu)
+    assert sum("length_end_before_first_audio_code" in node for node in cpu) == 2
+    assert any("serial" in node for node in cpu)
+    assert cuda == selected_nodes("C03", config["profile"], True)
+
+
 @pytest.mark.parametrize(
     "change",
     [

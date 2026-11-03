@@ -5,9 +5,9 @@ def validate(config):
     deployment = config.get("deployment", {})
     if deployment.get("decode_rope_reuse") is not True:
         raise ValueError("ar-batched-rope requires enabled decode_rope_reuse")
-    if (
-        config.get("context_remaining") is not True
-        or config.get("test_suite", "legacy") != "legacy"
+    if config.get("context_remaining") is not True or config.get("test_suite", "legacy") not in (
+        "legacy",
+        "eager-bugs",
     ):
         raise ValueError("ar-batched-rope requires the remaining-context contract")
     if any(

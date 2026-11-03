@@ -7,9 +7,9 @@ def validate(config):
     deployment = config.get("deployment", {})
     if deployment.get("broadcast_attention_bias") is not True:
         raise ValueError("Codec bias broadcast requires explicit activation")
-    if (
-        config.get("context_remaining") is not True
-        or config.get("test_suite", "legacy") != "legacy"
+    if config.get("context_remaining") is not True or config.get("test_suite", "legacy") not in (
+        "legacy",
+        "eager-bugs",
     ):
         raise ValueError("Codec bias broadcast requires the remaining-context contract")
     if any(

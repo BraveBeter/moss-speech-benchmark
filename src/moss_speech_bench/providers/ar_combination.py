@@ -44,9 +44,9 @@ def validate(config):
         raise ValueError("AR combination requires at least two explicit optimizations")
     if len(selected) != len(set(selected)) or not set(selected) <= set(FEATURES):
         raise ValueError("Unknown or duplicate AR combination optimization")
-    if (
-        config.get("context_remaining") is not True
-        or config.get("test_suite", "legacy") != "legacy"
+    if config.get("context_remaining") is not True or config.get("test_suite", "legacy") not in (
+        "legacy",
+        "eager-bugs",
     ):
         raise ValueError("AR combination requires the current remaining-context contract")
     deployment = config.get("deployment", {})

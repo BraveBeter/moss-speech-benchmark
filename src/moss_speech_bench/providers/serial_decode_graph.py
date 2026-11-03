@@ -10,9 +10,9 @@ def validate(config):
         for k in ("decode_graph_serial_batch", "decode_graph", "ar_graph")
     ):
         raise ValueError("Serial decode graph requires all explicit activation flags")
-    if (
-        config.get("context_remaining") is not True
-        or config.get("test_suite", "legacy") != "legacy"
+    if config.get("context_remaining") is not True or config.get("test_suite", "legacy") not in (
+        "legacy",
+        "eager-bugs",
     ):
         raise ValueError("Serial decode graph requires the remaining-context contract")
     if any(

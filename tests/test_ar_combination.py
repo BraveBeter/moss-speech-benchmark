@@ -54,6 +54,16 @@ def test_combination_requires_explicit_exact_feature_deployment(tmp_path):
         load_suite(configuration(tmp_path, **config))
 
 
+def test_new_eager_combination_keeps_strategy_checks_and_empty_audio_cases(tmp_path):
+    config = load_suite(configuration(tmp_path, test_suite="eager-bugs"))
+    arguments = dict(context_remaining=True, test_suite="eager-bugs", optimizations=FEATURES)
+    cpu = selected_nodes("C01", config["profile"], **arguments)
+    cuda = selected_nodes("C03", config["profile"], **arguments)
+    assert sum("length_end_before_first_audio_code" in node for node in cpu) == 2
+    assert not any("collat" in node for node in cpu)
+    assert cuda == selected_nodes("C03", config["profile"], True, optimizations=FEATURES)
+
+
 def test_combination_does_not_accept_unqualified_library_or_graph(tmp_path):
     with pytest.raises(ValueError, match="library"):
         load_suite(configuration(tmp_path, native_norm_library=None))

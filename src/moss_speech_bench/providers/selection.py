@@ -15,7 +15,7 @@ def expected_tests(
             or not set(optimizations) <= set(strategies)
         ):
             raise ValueError("Missing, unknown or duplicate AR combination strategies")
-        expected = expected_tests(selection, gate, "hf-reference", context_remaining)
+        expected = expected_tests(selection, gate, "hf-reference", context_remaining, test_suite)
         replacements = {}
         for feature in strategies:
             for old, new in selection.get(gate + "-" + feature + "-replacements", {}).items():
@@ -86,7 +86,9 @@ def expected_tests(
     if test_suite != "legacy":
         if test_suite not in selection["test_suites"]:
             raise ValueError("Unknown correctness test suite: " + test_suite)
-        if profile != "context-remaining":
+        if test_suite == "eager-bugs" and not (context_remaining or profile == "context-remaining"):
+            raise ValueError("Eager feedback suite requires the remaining-context contract")
+        if test_suite != "eager-bugs" and profile != "context-remaining":
             raise ValueError("P4 test suites require the context-remaining profile")
         changes = selection["test_suites"][test_suite].get(gate, {})
         replacements = changes.get("replace", {})
