@@ -22,16 +22,19 @@ if __package__:
     from .allocation import require_gpu_allocation
     from .ar_combination import features
     from .batched_rope import validate_qualification as validate_batched_rope
+    from .cumulative import COMPUTE_AR_FEATURES
     from .serial_decode_graph import validate_qualification as validate_serial_decode_graph
 else:
     from allocation import require_gpu_allocation
     from ar_combination import features
     from batched_rope import validate_qualification as validate_batched_rope
+    from cumulative import COMPUTE_AR_FEATURES
     from serial_decode_graph import validate_qualification as validate_serial_decode_graph
 
 PROFILE = {
     "profile": os.environ.get("MOSS_CORRECTNESS_PROFILE"),
     "ar_optimizations": json.loads(os.environ.get("MOSS_AR_OPTIMIZATIONS", "[]")),
+    "optimizations": json.loads(os.environ.get("MOSS_OPTIMIZATIONS", "[]")),
 }
 
 MODEL_REVISION = "cff025bb41d8459d59abac0b5e44aba7f659ec9e"
@@ -288,7 +291,10 @@ def run(
         torch.set_default_dtype(torch.bfloat16)
         try:
             # Projection guards require version counters, as in the serving loader.
-            with torch.inference_mode(PROFILE["profile"] != "ar-combination"), torch.no_grad():
+            with (
+                torch.inference_mode(PROFILE["profile"] not in ("ar-combination", "cumulative")),
+                torch.no_grad(),
+            ):
                 model = MossSpeechSGLangModel(configuration, init_device=device).eval()
                 assert model.total_attention_layers == 40 and model.attention_layer_ids() == list(
                     range(40)
@@ -296,7 +302,7 @@ def run(
                 schema = {}
                 model.load_weights(stream_weights(model_path, schema))
                 model.assert_heads_independent()
-            if PROFILE["profile"] == "ar-combination":
+            if PROFILE["profile"] in ("ar-combination", "cumulative"):
                 parameters = dict(model.named_parameters())
                 assert parameters and all(not p.is_inference() for p in parameters.values()), (
                     "AR combination requires versioned checkpoint parameters"
@@ -383,6 +389,53 @@ def run(
                 report["full_prefill_graph"] = assert_full_prefill_graph(
                     model, lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"]))
                 )
+            if PROFILE["profile"] == "cumulative" and set(features(PROFILE)) & set(
+                COMPUTE_AR_FEATURES
+            ):
+                compute = set(features(PROFILE)) & set(COMPUTE_AR_FEATURES)
+                if compute == {"ar-decode-graph", "ar-serial-decode-graph"}:
+                    from tests.unit_test.fixtures.moss_speech_model import (
+                        assert_serial_decode_graph,
+                    )
+
+                    serial = assert_serial_decode_graph(model, capacity=1024)
+                    serial_calls = sum(serial["executions"].values())
+                    b1_calls = serial["row_replays"] - sum(
+                        int(batch) * count for batch, count in serial["executions"].items()
+                    )
+                    assert b1_calls > 0 and serial_calls > 0
+                    report["cumulative_ar"] = dict(
+                        optimizations={
+                            feature: dict(
+                                executions=b1_calls
+                                if feature == "ar-decode-graph"
+                                else serial_calls,
+                                complete_heads_exact=serial["complete_heads_exact"],
+                                all_kv_exact=serial["all_kv_exact"],
+                            )
+                            for feature in compute
+                        },
+                        complete_heads_exact=serial["complete_heads_exact"],
+                        all_kv_exact=serial["all_kv_exact"],
+                        joint_optimizations=sorted(compute),
+                        joint_complete_heads_exact=serial["complete_heads_exact"],
+                        joint_all_kv_exact=serial["all_kv_exact"],
+                        serial_decode_graph=serial,
+                    )
+                else:
+                    from tests.unit_test.fixtures.moss_speech_model import assert_cumulative_ar
+
+                    report["cumulative_ar"] = assert_cumulative_ar(
+                        model,
+                        optimizations=features(PROFILE),
+                        projection_batch_size=int(os.environ["MOSS_AR_PROJECTION_BATCH"]),
+                        graph_lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"])),
+                        native_norm_library=os.environ.get("MOSS_NATIVE_NORM_LIBRARY") or None,
+                    )
+                if "ar-serial-decode-graph" in features(PROFILE):
+                    report["serial_decode_graph"] = report["cumulative_ar"]["serial_decode_graph"]
+                    validate_serial_decode_graph(report["serial_decode_graph"])
+                write_json(report_path, report)
             if PROFILE["profile"] == "ar-combination":
                 from tests.unit_test.fixtures.moss_speech_model import assert_ar_combination
 
@@ -393,7 +446,7 @@ def run(
                     graph_lengths=tuple(json.loads(os.environ["MOSS_AR_PREFILL_LENGTHS"])),
                     native_norm_library=os.environ.get("MOSS_NATIVE_NORM_LIBRARY") or None,
                 )
-            if PROFILE["profile"] == "ar-batched-rope":
+            if "ar-batched-rope" in features(PROFILE):
                 from tests.unit_test.fixtures.moss_speech_model import qualify_batched_rope
 
                 grids = {
@@ -461,7 +514,7 @@ def run(
                 if "ar-host-metadata" in features(PROFILE):
                     assert backend.host_metadata is not None
                     report["host_metadata_prefills"] += 1
-                if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "ar-prefix-cache":
+                if "ar-prefix-cache" in features(PROFILE):
                     from tests.unit_test.fixtures.moss_speech_prefix_cache import (
                         verify_cached_prefill,
                     )

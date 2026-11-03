@@ -27,6 +27,8 @@ MARKERS = {
 
 
 def features(config):
+    if config.get("profile") == "cumulative":
+        return config.get("optimizations", [])
     return (
         config.get("ar_optimizations", [])
         if config.get("profile") == "ar-combination"
@@ -140,7 +142,7 @@ def validate_activation(config, output, require=True):
         handle.seek(offset)
         payload = handle.read()
     text = payload.decode("utf-8", errors="replace")
-    selected = features(config)
+    selected = [feature for feature in features(config) if feature in MARKERS]
     required = config.get("service_activation_required", selected)
     counts = {feature: text.count(MARKERS[feature]) for feature in selected}
     native_graph_replays = sum(

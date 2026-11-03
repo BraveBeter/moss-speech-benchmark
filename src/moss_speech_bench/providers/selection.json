@@ -1026,5 +1026,8 @@
   "C03-codec-bias-broadcast": [
     "tests/unit_test/moss_speech/test_codec.py::test_bias_broadcast_cuda_exact_live_inputs",
     "tests/unit_test/moss_speech/test_codec.py::test_bias_broadcast_trained_streaming_ownership"
+  ],
+  "C03-cumulative": [
+    "tests/unit_test/moss_speech/test_model.py::test_cumulative_serial_graph_host_metadata_prefill_exact"
   ]
 }

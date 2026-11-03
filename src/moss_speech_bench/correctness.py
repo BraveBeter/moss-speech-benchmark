@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from .correctness_http import run_http
-from .providers import batched_rope, codec_bias_broadcast, serial_decode_graph
+from .providers import batched_rope, codec_bias_broadcast, cumulative, serial_decode_graph
 from .providers.ar_combination import (
     features,
     validate,
@@ -68,20 +68,29 @@ def load_suite(path):
     deployment = config.get("deployment", {})
     if type(config.get("context_remaining", False)) is not bool:
         raise ValueError("context_remaining requires a boolean")
-    combination = profile == "ar-combination"
+    combination = profile in ("ar-combination", "cumulative")
+    cumulative_profile = profile == "cumulative"
     if (
         deployment.get("broadcast_attention_bias", False) is not False
         and profile != "codec-bias-broadcast"
+        and not cumulative_profile
     ):
         raise ValueError("Enabled deployment requires profile codec-bias-broadcast")
     if (
         deployment.get("decode_graph_serial_batch", False) is not False
         and profile != "ar-serial-decode-graph"
+        and not cumulative_profile
     ):
         raise ValueError("Enabled deployment requires profile ar-serial-decode-graph")
-    if deployment.get("decode_rope_reuse", False) is not False and profile != "ar-batched-rope":
+    if (
+        deployment.get("decode_rope_reuse", False) is not False
+        and profile != "ar-batched-rope"
+        and not cumulative_profile
+    ):
         raise ValueError("Enabled deployment requires profile ar-batched-rope")
-    if profile == "ar-batched-rope":
+    if cumulative_profile:
+        cumulative.validate(config)
+    elif profile == "ar-batched-rope":
         batched_rope.validate(config)
     elif profile == "ar-serial-decode-graph":
         serial_decode_graph.validate(config)
@@ -130,11 +139,15 @@ def load_suite(path):
     for declared_profile, flag in activation.items():
         if deployment.get(flag) is True and profile != declared_profile and not combination:
             raise ValueError("Enabled deployment requires profile " + declared_profile)
-    if deployment.get("cfm_graph_mel_length") is not None and profile != "codec-cfm-graph":
+    if (
+        deployment.get("cfm_graph_mel_length") is not None
+        and profile != "codec-cfm-graph"
+        and not cumulative_profile
+    ):
         raise ValueError("Enabled CFM graph requires codec-cfm-graph profile")
     if config.get("native_norm_library") and profile != "native-norm" and not combination:
         raise ValueError("Native norm requires its explicit profile")
-    if config.get("direct_lt_library") and profile != "direct-lt":
+    if config.get("direct_lt_library") and profile != "direct-lt" and not cumulative_profile:
         raise ValueError("Native DirectLt requires its explicit profile")
     if profile == "ar-projection-graph" and (
         type(config.get("projection_graph_batch_size")) is not int
@@ -146,7 +159,7 @@ def load_suite(path):
         profile,
         config.get("context_remaining", False),
         config.get("test_suite", "legacy"),
-        config.get("ar_optimizations", []),
+        features(config),
     )
     return config
 
@@ -186,7 +199,7 @@ def preflight(config):
         probe = Path(config["long_text_request"]).resolve()
         assert probe in listed, "Unpinned long text generation request"
         assert read_json(probe)["modalities"] == ["text"]
-    if config["profile"] == "direct-lt":
+    if "direct-lt" in features(config):
         library = Path(config["direct_lt_library"]).resolve()
         assert library in listed, "Unpinned DirectLt library"
         assert config["deployment"].get("direct_lt_library_sha256") == file_hash(library)
@@ -209,7 +222,7 @@ def preflight(config):
             }
         if "tensors" in golden:
             assert file_hash(golden["tensors"]) == reference["tensor_artifact_sha256"]
-    if config["profile"] == "ar-batched-rope":
+    if "ar-batched-rope" in features(config):
         from .providers.cached_reference import validate_cached_reference
 
         cached = config["golden"]["C04_cached_decode"]
@@ -385,7 +398,8 @@ async def provider(gate, config, output):
                 & {"ar-decode-graph", "ar-serial-decode-graph", "context-prefill-graph"}
             )
             or (
-                config["profile"] == "ar-combination" and "ar-projection-graph" in features(config)
+                config["profile"] in ("ar-combination", "cumulative")
+                and "ar-projection-graph" in features(config)
             ),
         }
         if gate == "C04"
@@ -434,6 +448,8 @@ async def provider(gate, config, output):
         MOSS_CODE_PROFILE=config["code_profile"],
         MOSS_CORRECTNESS_PROFILE=config["profile"],
         MOSS_AR_OPTIMIZATIONS=json.dumps(config.get("ar_optimizations", [])),
+        MOSS_OPTIMIZATIONS=json.dumps(config.get("optimizations", [])),
+        MOSS_VOCODER_OPTIONS=json.dumps(config.get("run_vocoder", {})),
         MOSS_CACHED_HF_REPORT=config["golden"].get("C04_cached_decode", {}).get("report", ""),
         MOSS_CACHED_HF_TENSORS=config["golden"].get("C04_cached_decode", {}).get("tensors", ""),
         MOSS_AR_PROJECTION_BATCH=str(config.get("projection_graph_batch_size") or 0),
@@ -544,7 +560,7 @@ async def provider(gate, config, output):
             config["profile"],
             config.get("context_remaining", False),
             config.get("test_suite", "legacy"),
-            config.get("ar_optimizations", []),
+            features(config),
         )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected
@@ -561,15 +577,21 @@ async def provider(gate, config, output):
             read_json(config["golden"][gate]["report"]),
             test_suite=config.get("test_suite", "legacy"),
         )
-    if gate == "C04" and config["profile"] == "ar-batched-rope":
+    if gate == "C04" and "ar-batched-rope" in features(config):
         report = read_json(output / filenames[gate])
         batched_rope.validate_qualification(report["batched_rope"], list(report["cases"]))
         checks.append(dict(id="actual-b2-b4-hf-full-heads-exact-kv", status="pass"))
-    if gate == "C04" and config["profile"] == "ar-serial-decode-graph":
+    if gate == "C04" and "ar-serial-decode-graph" in features(config):
         serial_decode_graph.validate_qualification(
             read_json(output / filenames[gate])["serial_decode_graph"]
         )
         checks.append(dict(id="actual-serial-b2-b4-full-heads-kv-ownership", status="pass"))
+    if gate == "C04" and config["profile"] == "cumulative":
+        cumulative.validate_ar_qualification(
+            read_json(output / filenames[gate]).get("cumulative_ar"), features(config)
+        )
+        if set(features(config)) & set(cumulative.COMPUTE_AR_FEATURES):
+            checks.append(dict(id="actual-cumulative-ar-full-heads-kv", status="pass"))
     if gate == "C04" and config["profile"] == "ar-combination":
         validate_qualification(
             read_json(output / filenames[gate])["ar_combination"], features(config)
@@ -583,10 +605,10 @@ async def provider(gate, config, output):
         graph = read_json(output / filenames[gate])["full_prefill_graph"]
         assert graph["captures"] > 0 and graph["replays"] > 0 and graph["kv_layers"] == 40
         assert graph["complete_heads_and_scattered_kv_exact"] is True
-    if gate == "C04" and config["profile"] == "ar-host-metadata":
+    if gate == "C04" and "ar-host-metadata" in features(config):
         assert read_json(output / filenames[gate])["host_metadata_prefills"] == 8
         checks.append(dict(id="host-metadata-fullweight-prefills", status="pass"))
-    if gate == "C04" and config["profile"] == "ar-prefix-cache":
+    if gate == "C04" and "ar-prefix-cache" in features(config):
         for name, case in read_json(output / filenames[gate])["cases"].items():
             reuse = case["prefix_cache"]
             assert len(reuse) == 2 and all(
@@ -594,12 +616,29 @@ async def provider(gate, config, output):
                 for row in reuse
             )
             checks.append(dict(id=name + ":cached-prefill-exact", status="pass"))
-    if gate == "C06" and config["profile"] == "codec-bias-broadcast":
+    if gate == "C06" and config["profile"] == "cumulative":
+        cumulative.validate_codec_qualification(
+            read_json(output / filenames[gate]).get("cumulative_codec"),
+            features(config),
+            {
+                "report_sha256": file_hash(config["golden"]["C06"]["report"]),
+                "tensors_sha256": file_hash(config["golden"]["C06"]["tensors"]),
+                "pcm_atol": read_json(config["golden"]["C06"]["report"])[
+                    "pre_registered_comparison_policy"
+                ]["pcm_atol"],
+                "pcm_rtol": read_json(config["golden"]["C06"]["report"])[
+                    "pre_registered_comparison_policy"
+                ]["pcm_rtol"],
+            },
+        )
+        if len(set(features(config)) & set(cumulative.STREAMING_CODEC_FEATURES)) >= 2:
+            checks.append(dict(id="actual-cumulative-codec-hf-pcm-state", status="pass"))
+    if gate == "C06" and "codec-bias-broadcast" in features(config):
         codec_bias_broadcast.validate_qualification(
             read_json(output / filenames[gate])["bias_broadcast"]
         )
         checks.append(dict(id="actual-offline-bias-broadcast-all-processors", status="pass"))
-    if gate == "C06" and config["profile"] == "direct-lt":
+    if gate == "C06" and "direct-lt" in features(config):
         report = read_json(output / filenames[gate])
         actual = report["direct_lt"]
         qualified = actual.get("qualified_lengths")
@@ -773,6 +812,7 @@ async def run_correctness(path, output, selected=None, resume=False):
                         and config["profile"]
                         in (
                             "ar-combination",
+                            "cumulative",
                             "ar-batched-rope",
                             "ar-serial-decode-graph",
                             "codec-bias-broadcast",

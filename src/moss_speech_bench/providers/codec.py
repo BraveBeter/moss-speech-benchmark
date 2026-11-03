@@ -285,13 +285,18 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
     write_json(output_json, report)
     torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
-    bias_broadcast = os.environ.get("MOSS_CORRECTNESS_PROFILE") == "codec-bias-broadcast"
+    selected = (
+        json.loads(os.environ.get("MOSS_OPTIMIZATIONS", "[]"))
+        if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "cumulative"
+        else [os.environ.get("MOSS_CORRECTNESS_PROFILE")]
+    )
+    bias_broadcast = "codec-bias-broadcast" in selected
     decoder_options = {"broadcast_attention_bias": True} if bias_broadcast else {}
     decoder = AudioDecoder(
         root / "flow/flow.pt", root / "flow/hift.pt", device=device, **decoder_options
     ).eval()
     native_owner = None
-    if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "direct-lt":
+    if "direct-lt" in selected:
         from sglang_omni.models.moss_speech.components.cfm_direct_lt import (
             FULL_LENGTHS,
             install_direct_lt,
@@ -531,6 +536,31 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
             installed=native_owner.installed,
             qualified_lengths=list(FULL_LENGTHS),
         )
+    if os.environ.get("MOSS_CORRECTNESS_PROFILE") == "cumulative":
+        if __package__:
+            from .cumulative import STREAMING_CODEC_FEATURES, validate_codec_qualification
+        else:
+            from cumulative import STREAMING_CODEC_FEATURES, validate_codec_qualification
+        if len(set(selected) & set(STREAMING_CODEC_FEATURES)) >= 2:
+            from tests.unit_test.fixtures.moss_speech_codec import assert_cumulative_codec
+
+            report["cumulative_codec"] = assert_cumulative_codec(
+                codec_path=str(root),
+                reference_json=str(Path(os.environ["MOSS_CODEC_GOLDEN"])),
+                reference_tensors=str(Path(os.environ["MOSS_CODEC_GOLDEN_TENSORS"])),
+                optimizations=selected,
+                vocoder_options=json.loads(os.environ["MOSS_VOCODER_OPTIONS"]),
+            )
+            validate_codec_qualification(
+                report["cumulative_codec"],
+                selected,
+                {
+                    "report_sha256": digest(Path(os.environ["MOSS_CODEC_GOLDEN"])),
+                    "tensors_sha256": digest(Path(os.environ["MOSS_CODEC_GOLDEN_TENSORS"])),
+                    "pcm_atol": COMPARISON_POLICY["pcm_atol"],
+                    "pcm_rtol": COMPARISON_POLICY["pcm_rtol"],
+                },
+            )
     if bias_broadcast:
         processors = decoder.bias_broadcast_processors
         report["bias_broadcast"] = dict(

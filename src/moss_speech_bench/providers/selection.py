@@ -7,6 +7,14 @@ from pathlib import Path
 def expected_tests(
     selection, gate, profile, context_remaining=False, test_suite="legacy", optimizations=()
 ):
+    if profile == "cumulative":
+        if not context_remaining or test_suite != "eager-bugs":
+            raise ValueError("Cumulative selection requires the new eager contract")
+        if __package__:
+            from .cumulative import regression_nodes
+        else:
+            from cumulative import regression_nodes
+        return regression_nodes(selection, gate, optimizations, expected_tests)
     if profile == "ar-combination":
         strategies = selection["ar-combination-strategies"]
         if (
