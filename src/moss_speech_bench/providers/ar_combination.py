@@ -213,6 +213,7 @@ def main():
     arguments = parser.parse_args()
     config = load_suite(arguments.config)
     if config["profile"] not in (
+        "cumulative",
         "ar-combination",
         "ar-batched-rope",
         "ar-serial-decode-graph",

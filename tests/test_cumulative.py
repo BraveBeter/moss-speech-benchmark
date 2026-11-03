@@ -2,11 +2,12 @@
 
 import copy
 import json
+import sys
 
 import pytest
 
 from moss_speech_bench.correctness import load_suite
-from moss_speech_bench.providers.ar_combination import validate_activation
+from moss_speech_bench.providers.ar_combination import main, validate_activation
 from moss_speech_bench.providers.cumulative import (
     validate_ar_qualification,
     validate_codec_qualification,
@@ -109,6 +110,21 @@ def test_cumulative_activation_requires_actual_both_serial_batches(tmp_path):
     with path.open("a") as output:
         output.write("serial batch decode graph replay active batch=4\n")
     assert validate_activation(config, tmp_path / "proof")["status"] == "pass"
+
+
+def test_activation_cli_accepts_the_cumulative_profile(tmp_path, monkeypatch):
+    config = configuration(tmp_path)
+    (tmp_path / "server.log").write_text(
+        "MOSS full decode graph replay active\n"
+        "serial batch decode graph replay active batch=2\n"
+        "serial batch decode graph replay active batch=4\n"
+    )
+    output = tmp_path / "cli-proof"
+    monkeypatch.setattr(
+        sys, "argv", ["activation", "--config", str(config), "--output", str(output)]
+    )
+    main()
+    assert json.loads((output / "service-activation.json").read_text())["status"] == "pass"
 
 
 def test_joint_numerical_proof_cannot_be_replaced_by_individual_successes():
