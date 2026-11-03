@@ -1029,5 +1029,8 @@
   ],
   "C03-cumulative": [
     "tests/unit_test/moss_speech/test_model.py::test_cumulative_serial_graph_host_metadata_prefill_exact"
+  ],
+  "C03-cumulative-independent": [
+    "tests/unit_test/moss_speech/test_model.py::test_cumulative_independent_ar_cuda_exact"
   ]
 }

@@ -92,6 +92,8 @@ def validate_ar_qualification(report, selected):
 
 
 def validate(config):
+    if config.get("cumulative_api") not in (None, "integrated-ar", "independent"):
+        raise ValueError("Unknown cumulative source API")
     selected = config.get("optimizations")
     if (
         not isinstance(selected, list)
@@ -181,20 +183,21 @@ def validate(config):
         raise ValueError("Invalid cumulative activation offset")
 
 
-def regression_nodes(selection, gate, selected, expected_tests):
+def regression_nodes(selection, gate, selected, expected_tests, cumulative_api=None):
     if not selected or len(selected) != len(set(selected)) or not set(selected) <= set(FEATURES):
         raise ValueError("Missing, unknown or duplicate cumulative strategies")
     core = [feature for feature in selected if feature in AR_FEATURES]
-    if len(core) >= 2:
+    integrated = cumulative_api != "independent" and len(core) >= 2
+    if integrated:
         expected = expected_tests(selection, gate, "ar-combination", True, "eager-bugs", core)
-    elif core:
+    elif core and cumulative_api != "independent":
         expected = expected_tests(selection, gate, core[0], True, "eager-bugs")
     else:
         expected = expected_tests(selection, gate, "context-remaining", True, "eager-bugs")
     replacements = {}
     additions = []
     for feature in selected:
-        if feature in core:
+        if feature in core and cumulative_api != "independent":
             continue
         if feature in MICRO_SUITES:
             changes = selection["test_suites"][MICRO_SUITES[feature]].get(gate, {})
@@ -219,8 +222,14 @@ def regression_nodes(selection, gate, selected, expected_tests):
     for node in additions:
         if node not in expected:
             expected.append(node)
-    if gate == "C03" and len(core) >= 2:
+    if gate == "C03" and integrated:
         expected += selection["C03-cumulative"]
+    elif (
+        gate == "C03"
+        and cumulative_api == "independent"
+        and len(set(selected) & set(COMPUTE_AR_FEATURES)) > 2
+    ):
+        expected += selection["C03-cumulative-independent"]
     if len(expected) != len(set(expected)):
         raise ValueError("Duplicate cumulative correctness nodes")
     return expected

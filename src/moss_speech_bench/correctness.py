@@ -160,6 +160,7 @@ def load_suite(path):
         config.get("context_remaining", False),
         config.get("test_suite", "legacy"),
         features(config),
+        config.get("cumulative_api"),
     )
     return config
 
@@ -449,6 +450,7 @@ async def provider(gate, config, output):
         MOSS_CORRECTNESS_PROFILE=config["profile"],
         MOSS_AR_OPTIMIZATIONS=json.dumps(config.get("ar_optimizations", [])),
         MOSS_OPTIMIZATIONS=json.dumps(config.get("optimizations", [])),
+        MOSS_CUMULATIVE_API=config.get("cumulative_api") or "",
         MOSS_VOCODER_OPTIONS=json.dumps(config.get("run_vocoder", {})),
         MOSS_CACHED_HF_REPORT=config["golden"].get("C04_cached_decode", {}).get("report", ""),
         MOSS_CACHED_HF_TENSORS=config["golden"].get("C04_cached_decode", {}).get("tensors", ""),
@@ -561,6 +563,7 @@ async def provider(gate, config, output):
             config.get("context_remaining", False),
             config.get("test_suite", "legacy"),
             features(config),
+            config.get("cumulative_api"),
         )
         assert set(report["collected"]) == set(expected) and set(report["outcomes"]) == set(
             expected

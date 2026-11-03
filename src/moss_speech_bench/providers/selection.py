@@ -5,7 +5,13 @@ from pathlib import Path
 
 
 def expected_tests(
-    selection, gate, profile, context_remaining=False, test_suite="legacy", optimizations=()
+    selection,
+    gate,
+    profile,
+    context_remaining=False,
+    test_suite="legacy",
+    optimizations=(),
+    cumulative_api=None,
 ):
     if profile == "cumulative":
         if not context_remaining or test_suite != "eager-bugs":
@@ -14,7 +20,7 @@ def expected_tests(
             from .cumulative import regression_nodes
         else:
             from cumulative import regression_nodes
-        return regression_nodes(selection, gate, optimizations, expected_tests)
+        return regression_nodes(selection, gate, optimizations, expected_tests, cumulative_api)
     if profile == "ar-combination":
         strategies = selection["ar-combination-strategies"]
         if (
@@ -108,6 +114,15 @@ def expected_tests(
     return expected
 
 
-def selected_nodes(gate, profile, context_remaining=False, test_suite="legacy", optimizations=()):
+def selected_nodes(
+    gate,
+    profile,
+    context_remaining=False,
+    test_suite="legacy",
+    optimizations=(),
+    cumulative_api=None,
+):
     selection = json.loads(Path(__file__).with_name("selection.json").read_text())
-    return expected_tests(selection, gate, profile, context_remaining, test_suite, optimizations)
+    return expected_tests(
+        selection, gate, profile, context_remaining, test_suite, optimizations, cumulative_api
+    )

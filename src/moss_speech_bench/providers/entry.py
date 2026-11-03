@@ -70,6 +70,7 @@ try:
                     optimizations=json.loads(os.environ.get("MOSS_OPTIMIZATIONS", "[]")),
                 )
             ),
+            os.environ.get("MOSS_CUMULATIVE_API") or None,
         )
 
         class Coverage:

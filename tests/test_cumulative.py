@@ -206,3 +206,16 @@ def test_cumulative_ar_combination_keeps_all_specialized_nodes(tmp_path):
     cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected)
     assert sum("length_end_before_first_audio_code" in node for node in cpu) == 2
     assert len(cpu) == len(set(cpu))
+
+
+def test_independent_ports_keep_atomic_and_joint_checks_without_integrated_api():
+    selected = ["ar-decode-graph", "ar-serial-decode-graph", "native-norm", "codec-bias-broadcast"]
+    cuda = selected_nodes("C03", "cumulative", True, "eager-bugs", selected, "independent")
+    assert len(cuda) == len(set(cuda))
+    for feature in selected:
+        assert set(selected_nodes("C03", feature, True, "eager-bugs")) <= set(cuda)
+    assert any("test_cumulative_independent_ar_cuda_exact" in node for node in cuda)
+    assert not any("test_ar_combination_cuda" in node for node in cuda)
+    cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected, "independent")
+    assert sum("length_end_before_first_audio_code" in node for node in cpu) == 2
+    assert any("native_norm" in node for node in cpu)
