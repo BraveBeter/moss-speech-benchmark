@@ -773,6 +773,15 @@
           "tests/unit_test/moss_speech/test_codec.py::test_cuda_shared_hift_preserves_real_pcm_and_lifetime"
         ]
       }
+    },
+    "eager-bugs": {
+      "C01": {
+        "replace": {
+          "tests/unit_test/moss_speech/test_codec.py::test_stream_rejects_duplicates_empty_final_and_decoder_failure_then_recovers": "tests/unit_test/moss_speech/test_codec.py::test_stream_empty_final_cleans_up_and_decoder_failure_recovers",
+          "tests/unit_test/moss_speech/test_processor.py::test_collate_left_pads_without_changing_samples": "tests/unit_test/moss_speech/test_streaming.py::test_length_end_before_first_audio_code_completes_without_audio[False]",
+          "tests/unit_test/moss_speech/test_processor.py::test_empty_collation_is_rejected": "tests/unit_test/moss_speech/test_streaming.py::test_length_end_before_first_audio_code_completes_without_audio[True]"
+        }
+      }
     }
   },
   "C01-direct-lt": [

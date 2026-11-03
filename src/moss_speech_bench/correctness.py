@@ -308,19 +308,25 @@ def preflight(config):
     )
 
 
-def numerical_checks(gate, report, golden):
+def numerical_checks(gate, report, golden, *, test_suite="legacy"):
     assert report.get("status") == "passed", report.get("error", report.get("status"))
     checks = {}
     if gate == "C02":
         assert set(report["text_comparisons"]) == set(golden["text_encodings"])
-        assert set(report["left_padding_comparisons"]) == set(golden["cases"])
-        assert set(report["batch_comparisons"]) == {
-            "case_order",
-            "input_ids",
-            "attention_mask",
-            "shape",
-            "padding_side",
-        }
+        single_request = test_suite == "eager-bugs"
+        if single_request:
+            assert report["processor_contract"] == "single-request"
+            assert report["left_padding_comparisons"] == report["batch_comparisons"] == {}
+        else:
+            assert report.get("processor_contract", "legacy-collate") == "legacy-collate"
+            assert set(report["left_padding_comparisons"]) == set(golden["cases"])
+            assert set(report["batch_comparisons"]) == {
+                "case_order",
+                "input_ids",
+                "attention_mask",
+                "shape",
+                "padding_side",
+            }
         for key in ("defaults_comparison", "pad_id_comparison"):
             checks[key] = report[key]["equal"]
         for key in ("text_comparisons", "canonical_text_comparisons", "batch_comparisons"):
@@ -333,11 +339,14 @@ def numerical_checks(gate, report, golden):
                 "prompt_len_comparison",
             ):
                 checks[name + "/" + key] = case[key]["equal"]
-            for key in ("grid", "mask"):
-                checks[name + "/padding/" + key] = report["left_padding_comparisons"][name][key][
-                    "equal"
-                ]
-        assert len(checks) == 76 and report["samples_unchanged"]
+            if not single_request:
+                for key in ("grid", "mask"):
+                    checks[name + "/padding/" + key] = report["left_padding_comparisons"][name][
+                        key
+                    ]["equal"]
+        assert len(checks) == (55 if single_request else 76)
+        if not single_request:
+            assert report["samples_unchanged"]
     elif gate == "C04":
         assert len(report["cases"]) == 8 and set(report["cases"]) == set(golden["cases"])
         for name, case in report["cases"].items():
@@ -547,7 +556,10 @@ async def provider(gate, config, output):
         assert all(c["status"] == "pass" for c in checks), "Mandatory tests skipped or failed"
     else:
         checks = numerical_checks(
-            gate, read_json(output / filenames[gate]), read_json(config["golden"][gate]["report"])
+            gate,
+            read_json(output / filenames[gate]),
+            read_json(config["golden"][gate]["report"]),
+            test_suite=config.get("test_suite", "legacy"),
         )
     if gate == "C04" and config["profile"] == "ar-batched-rope":
         report = read_json(output / filenames[gate])

@@ -297,3 +297,7 @@ input, sampling or named Quick workload is changed.
 ## Operator-owned local GPUs
 
 On a dedicated host/container without Slurm, explicitly add `local_gpu_allocation: {"devices": [1], "authorization": "operator authorization for this run"}` to the correctness configuration. The external launcher must reserve those devices and use the same visible devices for serving. Providers set and validate CUDA_VISIBLE_DEVICES, require usable CUDA, and archive device properties and the declaration in each GPU gate. This is operator-supplied allocation metadata, not a scheduler reservation. Never fabricate SLURM_JOB_ID; existing Slurm configurations still work. Numerical checks, pinned assets, source cleanliness and C00–C08 coverage remain unchanged.
+
+## Eager feedback fixes
+
+Use `profile: context-remaining` with `test_suite: eager-bugs` for the candidate that removes the unused processor collate interface. C01 keeps 536 fixed nodes, replacing the two collate-only tests with buffered/streaming zero-code completion regressions and updating the codec empty-final lifecycle test. C02 uses the same independent HF reference, all eight request grids, masks, lengths, token encodings and defaults (55 exact comparisons); the 21 collate/padding comparisons no longer describe a serving interface. The explicit suite and report contract must agree. Legacy candidates retain all 76 comparisons. C03–C08, context probes and Quick requirements are unchanged. Empty audio is valid for the one-token boundary regression; normal Quick empty-output failures remain failures.

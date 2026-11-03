@@ -817,6 +817,57 @@ def test_p4_suite_keeps_legacy_and_context_regressions():
         selected_nodes("C01", "hf-reference", test_suite="p4-16")
 
 
+def test_eager_bugs_suite_replaces_removed_interfaces_with_terminal_regressions():
+    from moss_speech_bench.providers.selection import selected_nodes
+
+    legacy = selected_nodes("C01", "context-remaining")
+    fixed = selected_nodes("C01", "context-remaining", test_suite="eager-bugs")
+    removed = set(legacy) - set(fixed)
+    added = set(fixed) - set(legacy)
+    assert len(fixed) == len(legacy) == 536
+    assert len(removed) == len(added) == 3
+    assert sum("collat" in node for node in removed) == 2
+    assert sum("length_end_before_first_audio_code" in node for node in added) == 2
+    assert any("empty_final_cleans_up" in node for node in added)
+    assert selected_nodes("C03", "context-remaining", test_suite="eager-bugs") == selected_nodes(
+        "C03", "context-remaining"
+    )
+
+
+def test_single_request_processor_proof_requires_explicit_suite_and_all_hf_cases():
+    report = dict(
+        status="passed",
+        processor_contract="single-request",
+        defaults_comparison={"equal": True},
+        pad_id_comparison={"equal": True},
+        text_comparisons={str(i): {"equal": True} for i in range(29)},
+        canonical_text_comparisons={},
+        cases={
+            str(i): {
+                key: {"equal": True}
+                for key in (
+                    "input_ids_comparison",
+                    "attention_mask_comparison",
+                    "prompt_len_comparison",
+                )
+            }
+            for i in range(8)
+        },
+        batch_comparisons={},
+        left_padding_comparisons={},
+    )
+    golden = dict(text_encodings=dict(report["text_comparisons"]), cases=dict(report["cases"]))
+    assert len(numerical_checks("C02", report, golden, test_suite="eager-bugs")) == 55
+    with pytest.raises(AssertionError):
+        numerical_checks("C02", report, golden)
+    report["cases"]["0"]["input_ids_comparison"]["equal"] = False
+    with pytest.raises(AssertionError):
+        numerical_checks("C02", report, golden, test_suite="eager-bugs")
+    report["cases"].pop("0")
+    with pytest.raises(AssertionError):
+        numerical_checks("C02", report, golden, test_suite="eager-bugs")
+
+
 @pytest.mark.parametrize(
     "suite,cpu_count,cuda_count",
     [("p4-15", 545, 3), ("p4-16", 540, 9), ("p4-17", 536, 4), ("p4-18", 539, 4)],
