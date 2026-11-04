@@ -209,7 +209,18 @@ def regression_nodes(selection, gate, selected, expected_tests, cumulative_api=N
             patch, nodes = selection.get(name + "-replacements", {}), selection[name]
         for old, new in patch.items():
             if old in replacements and replacements[old] != new:
-                raise ValueError("Conflicting cumulative regression replacement: " + old)
+                previous = replacements[old]
+                previous_nodes = previous if isinstance(previous, list) else [previous]
+                current_nodes = new if isinstance(new, list) else [new]
+                if set(current_nodes) <= set(previous_nodes):
+                    continue
+                if not set(previous_nodes) <= set(current_nodes):
+                    if not all(
+                        node.startswith(old + "[") and node.endswith("]")
+                        for node in previous_nodes + current_nodes
+                    ):
+                        raise ValueError("Conflicting cumulative regression replacement: " + old)
+                    new = list(dict.fromkeys(previous_nodes + current_nodes))
             replacements[old] = new
         additions.extend(nodes)
     for old, new in replacements.items():
@@ -220,8 +231,11 @@ def regression_nodes(selection, gate, selected, expected_tests, cumulative_api=N
         index = expected.index(old)
         expected[index : index + 1] = new if isinstance(new, list) else [new]
     for node in additions:
-        if node not in expected:
-            expected.append(node)
+        replacement = replacements.get(node, node)
+        nodes = replacement if isinstance(replacement, list) else [replacement]
+        for actual in nodes:
+            if actual not in expected:
+                expected.append(actual)
     if gate == "C03" and integrated:
         expected += selection["C03-cumulative"]
     elif (

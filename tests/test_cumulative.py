@@ -3,16 +3,18 @@
 import copy
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
 from moss_speech_bench.correctness import load_suite
+from moss_speech_bench.providers import selection as selection_module
 from moss_speech_bench.providers.ar_combination import main, validate_activation
 from moss_speech_bench.providers.cumulative import (
     validate_ar_qualification,
     validate_codec_qualification,
 )
-from moss_speech_bench.providers.selection import selected_nodes
+from moss_speech_bench.providers.selection import expected_tests, selected_nodes
 
 
 def configuration(tmp_path, **changes):
@@ -219,3 +221,85 @@ def test_independent_ports_keep_atomic_and_joint_checks_without_integrated_api()
     cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected, "independent")
     assert sum("length_end_before_first_audio_code" in node for node in cpu) == 2
     assert any("native_norm" in node for node in cpu)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_host_and_rope_keep_the_superset_of_shared_factory_cases(reverse):
+    strategies = [
+        "ar-decode-graph",
+        "ar-serial-decode-graph",
+        "ar-batched-rope",
+        "ar-host-metadata",
+    ]
+    if reverse:
+        strategies.reverse()
+    nodes = selected_nodes("C01", "cumulative", True, "eager-bugs", strategies, "independent")
+    factory = "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget"
+    assert nodes.count(factory + "[False]") == 1
+    assert nodes.count(factory + "[True]") == 1
+    assert len(nodes) == len(set(nodes))
+    assert sum("length_end_before_first_audio_code" in node for node in nodes) == 2
+
+
+def test_incompatible_replacement_destinations_still_fail():
+    catalog = json.loads(Path(selection_module.__file__).with_name("selection.json").read_text())
+    factory = "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget"
+    catalog["C01-ar-host-metadata-replacements"][factory] = (
+        "tests/unit_test/moss_speech/test_config.py::test_incompatible_factory_contract"
+    )
+    with pytest.raises(ValueError, match="Conflicting cumulative regression replacement"):
+        expected_tests(
+            catalog,
+            "C01",
+            "cumulative",
+            True,
+            "eager-bugs",
+            ["ar-decode-graph", "ar-batched-rope", "ar-host-metadata"],
+            "independent",
+        )
+
+
+def test_prefill_full_cuda_list_uses_the_host_baseline_replacement():
+    selected = [
+        "ar-decode-graph",
+        "ar-serial-decode-graph",
+        "ar-batched-rope",
+        "ar-host-metadata",
+        "context-prefill-graph",
+    ]
+    nodes = selected_nodes("C03", "cumulative", True, "eager-bugs", selected, "independent")
+    baseline = "tests/unit_test/moss_speech/test_model.py::test_native_cuda_prefill_decode_keep_requests_and_tail_kv_independent"
+    assert baseline not in nodes
+    assert nodes.count(baseline + "[False]") == 1
+    assert nodes.count(baseline + "[True]") == 1
+    for node in selected_nodes("C03", "context-prefill-graph", True, "eager-bugs"):
+        assert node == baseline or node in nodes
+    cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected, "independent")
+    assert sum("length_end_before_first_audio_code" in node for node in cpu) == 2
+
+
+@pytest.mark.parametrize("strategy", ["context-small-first", "context-startup-schedule"])
+def test_known_empty_extra_gate_keeps_the_original_cuda_baseline(strategy):
+    selected = ["ar-decode-graph", "ar-serial-decode-graph", "codec-bias-broadcast", strategy]
+    for gate in ("C01", "C03"):
+        nodes = selected_nodes(gate, "cumulative", True, "eager-bugs", selected, "independent")
+        assert set(selected_nodes(gate, strategy, True, "eager-bugs")) <= set(nodes)
+        assert len(nodes) == len(set(nodes))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_distinct_parameterizations_of_one_factory_keep_every_fixed_case(reverse):
+    strategies = [
+        "ar-decode-graph",
+        "ar-serial-decode-graph",
+        "ar-batched-rope",
+        "ar-host-metadata",
+        "mixed-modalities",
+    ]
+    if reverse:
+        strategies.reverse()
+    nodes = selected_nodes("C01", "cumulative", True, "eager-bugs", strategies, "independent")
+    factory = "tests/unit_test/moss_speech/test_config.py::test_ar_factory_preflights_and_forwards_placement_budget"
+    for case in ("False", "True", "default", "disabled", "enabled"):
+        assert nodes.count(factory + "[" + case + "]") == 1
+    assert len(nodes) == len(set(nodes))

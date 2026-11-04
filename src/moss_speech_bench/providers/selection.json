@@ -1032,5 +1032,8 @@
   ],
   "C03-cumulative-independent": [
     "tests/unit_test/moss_speech/test_model.py::test_cumulative_independent_ar_cuda_exact"
-  ]
+  ],
+  "C01-context-prefill-graph": [],
+  "C03-context-small-first": [],
+  "C03-context-startup-schedule": []
 }
