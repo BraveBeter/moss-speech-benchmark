@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moss-speech-benchmark"
-version = "0.4.0"
+version = "0.5.0"
 description = "Standalone MOSS-Speech chat performance benchmark"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -41,7 +41,7 @@ force-exclude = true
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.setuptools.data-files]
-"share/moss-speech-benchmark" = ["ORIGIN.md", "origin.json", "CORRECTNESS.md", "PROTOCOLS.md", "SUMMARY_TEMPLATE.md"]
+"share/moss-speech-benchmark" = ["ORIGIN.md", "origin.json", "CORRECTNESS.md", "PROTOCOLS.md", "SUMMARY_TEMPLATE.md", "JUDGE_PROTOCOL.md", "JUDGE_UPSTREAM_LICENSE.txt"]
 
 [tool.setuptools.package-data]
 "moss_speech_bench.providers" = ["*.json"]

@@ -10,5 +10,12 @@
   },
   "utmos": {
     "path": "/path/to/utmos.jit"
+  },
+  "judge": {
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "revision": "REPLACE_WITH_PROVIDER_MODEL_VERSION",
+    "api_key_env": "OPENAI_API_KEY",
+    "timeout": 120
   }
 }

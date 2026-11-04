@@ -79,14 +79,16 @@ def test_qa_aliases_and_missing_models():
             raise ImportError("optional model missing")
 
     sample = dict(task="s2s", language="en", expected="['Paris', 'City of Paris']")
-    values = evaluate(sample, dict(is_success=True), "audio.wav", Backend(), {})
+    values = evaluate(
+        sample, dict(is_success=True), "audio.wav", Backend(), {"qa_metric": "legacy_em"}
+    )
     assert values["accuracy"]["value"]["correct"]
     assert values["utmos"]["status"] == "unavailable"
     assert evaluate(sample, None, None, Backend(), {})["accuracy"]["status"] == "not_attempted"
     sample["expected"] = "__import__('os').system('false')"
-    assert not evaluate(sample, dict(is_success=True), "audio.wav", Backend(), {})["accuracy"][
-        "value"
-    ]["correct"]
+    assert not evaluate(
+        sample, dict(is_success=True), "audio.wav", Backend(), {"qa_metric": "legacy_em"}
+    )["accuracy"]["value"]["correct"]
 
 
 def test_corpus_rate_is_not_mean_and_missing_is_not_zero():
@@ -259,15 +261,23 @@ def test_answer_mention_is_explicit_diagnostic_not_semantic_accuracy():
     backend = Backend()
     sample = dict(task="s2s", language="en", expected="Moscow")
     result = evaluate(
-        sample, dict(is_success=True), "saved.wav", backend, {"qa_answer_mention": True}
+        sample,
+        dict(is_success=True),
+        "saved.wav",
+        backend,
+        {"qa_answer_mention": True, "qa_metric": "legacy_em"},
     )
     assert not result["accuracy"]["value"]["correct"]
     assert result["answer_mention"]["value"] == 1.0
     assert "answer_mention" not in evaluate(sample, dict(is_success=True), "saved.wav", backend, {})
     backend.text = "Moscowish"
     assert (
-        evaluate(sample, dict(is_success=True), "saved.wav", backend, {"qa_answer_mention": True})[
-            "answer_mention"
-        ]["value"]
+        evaluate(
+            sample,
+            dict(is_success=True),
+            "saved.wav",
+            backend,
+            {"qa_answer_mention": True, "qa_metric": "legacy_em"},
+        )["answer_mention"]["value"]
         == 0.0
     )

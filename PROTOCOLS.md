@@ -1,3 +1,7 @@
+# Current protocol: v5 official systems and third-party Judge
+
+See [JUDGE_PROTOCOL.md](JUDGE_PROTOCOL.md) for current behavior and sources. The v4/EM descriptions below document historical runs only.
+
 # MOSS-Speech evaluation protocols
 
 ## v4 measurement protocol

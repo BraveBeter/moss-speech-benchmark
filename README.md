@@ -105,19 +105,9 @@ Quick、Daily、Full 固定三轮（`--repeats 3`，其他值使用 custom）。
 
 ## 质量协议
 
-[PROTOCOLS.md](PROTOCOLS.md)定义当前 `moss-spoken-qa-v4` 与历史协议边界。三个集合的 S2T 默认使用 `spoken-qa-native-text-short-en-v1`：完整保留原生 `You are a helpful assistant. Respond with text outputs.`，再追加简短英文答案要求。S2S继续使用原 `spoken-qa-short-en-v1`，请求内容不变。命名套件的S2T即使配置了dataset/task system，也会保留该原生文字前缀；已有完整前缀不重复追加。有效prompt、内容/hash均进入归档，不包含参考答案。
+当前生成协议为v5：三个集合仅使用官方默认的文字/语音System，不再追加简短答案等评测提示词。Quick/Daily/Full拒绝附加prompt覆盖；预热及三轮平均保持。v4及更早的提示词和EM仅作历史证据，新旧运行不能直接比较。
 
-| 路径 | 离线指标 | 局限 |
-|---|---|---|
-| S2T | normalized whole-answer EM，保存名accuracy | 不是语义judge，正确解释也可能匹配失败 |
-| S2S | Qwen3-ASR转录后同一EM；UTMOS | EM不证明语义能力，UTMOS不证明答题正确 |
-| Codec Decoder | 预留WER/CER、SIM、DNSMOS | 未实现，不从端到端QA或聊天朗读推导 |
-
-Qwen3-ASR-1.7B统一走官方CI同源HTTP协议，默认并发32；示例外层A800配置见[qwen3-asr-server.json](examples/qwen3-asr-server.json)。长音频准入容量与客户端并发需匹配。客户端不启动ASR服务；score只上传已保存的回答WAV，不发送新的MOSS请求。Whisper依赖仅用于旧WER英文归一化，没有默认加载其ASR模型。
-
-主评分示例仅需英文ASR和UTMOS。SIM/双语ASR及原WER/CER实现保留供历史/custom报告复用，不进入当前三个端到端集合。可选`qa_answer_mention`仅是诊断，不能替代EM或称为官方QA Accuracy；语义评判器需独立定协议、版本及验证。
-
-每个数据集/任务默认只评分一个测量段，优先C4/r1，避免Full重复12次评分。结果保存每样本转录、值、失败及hash；Accuracy主分母包含全部预期样本。缓存身份包含输入、源码、模型/依赖、提示词和部署声明。失败不静默重试，预算占位单独保留，可恢复未完成评分。
+质量评分改为第三方Judge：S2T判已有文字，S2S对已保存音频ASR后判分，同时保留UTMOS。固定复用Kimi-Audio-Evalkit的三个OpenAudioBench判分模板；无Judge或失败时明确报告不可评分，不回退到精确匹配。配置`examples/scoring.json`中的endpoint、模型与版本，凭证从环境变量读取。原始题面须随输入冻结，不传给被测模型。详细论文依据、复现边界、缓存和许可见[JUDGE_PROTOCOL.md](JUDGE_PROTOCOL.md)。
 
 ## 指标、产物与恢复
 

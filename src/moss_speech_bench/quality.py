@@ -88,6 +88,15 @@ class LocalScorers:
             return model.transcribe(str(path), language="en", fp16=False)["text"]
         return model.generate(input=str(path))[0]["text"]
 
+    def judge(self, sample, answer):
+        if not self.config.get("judge"):
+            raise Unavailable("Third-party Judge not configured; no EM fallback")
+        from .judge import judge_answer
+
+        return judge_answer(
+            sample, answer, self.config, self.config["_judge_cache"], self.config.get("_deadline")
+        )
+
     def sim(self, reference, audio):
         # Upstream reports cosine * 100; expose cosine in [-1, 1].
         return self.model("sim").score_batch([str(reference)], [str(audio)])[0] / 100
@@ -126,6 +135,35 @@ def configuration(path):
                 if f.is_file()
             }
             config[key][field] = str(asset)
+    if "judge" in config:
+        from urllib.parse import urlsplit
+
+        spec = config["judge"]
+        allowed = {"base_url", "model", "revision", "api_key_env", "timeout"}
+        if not isinstance(spec, dict) or set(spec) - allowed:
+            raise ValueError("Judge accepts only endpoint/model/revision/key environment/timeout")
+        if any(
+            not isinstance(spec.get(k), str) or not spec[k].strip()
+            for k in ("base_url", "model", "revision")
+        ):
+            raise ValueError("Judge endpoint, model and revision are required")
+        url = urlsplit(spec["base_url"])
+        if (
+            url.scheme not in ("http", "https")
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError(
+                "Judge endpoint must not contain embedded credentials or query parameters"
+            )
+        if (
+            not math.isfinite(float(spec.get("timeout", 120)))
+            or float(spec.get("timeout", 120)) <= 0
+        ):
+            raise ValueError("Judge timeout must be positive and finite")
     versions = {}
     for name in ("jiwer", "openai-whisper", "zhon", "funasr", "torch", "torchaudio", "s3prl"):
         try:
@@ -137,7 +175,7 @@ def configuration(path):
         assets=assets,
         versions=versions,
         code=source_identity()["source_hash"],
-        protocol="moss-quality-v1",
+        protocol="moss-quality-v2-llm-judge",
     )
 
 
@@ -243,6 +281,8 @@ def evaluate(sample, row, audio, backend, config):
                 if transcript and transcript["status"] != "scored":
                     raise Unavailable("QA transcript unavailable: " + str(transcript))
                 answer = transcript["value"] if transcript else row["text"]
+                if config.get("qa_metric") != "legacy_em":
+                    return backend.judge(sample, answer)
                 normalized = normalize_answer(answer)
                 return {
                     "correct": bool(normalized)
@@ -312,6 +352,14 @@ def score(directory, config_path=None, time_budget=None):
         raise ValueError("Time budget must be positive and finite")
     invocation = uuid.uuid4().hex
     config, contract = configuration(config_path)
+    from .judge_prompts import PROMPTS, UPSTREAM_COMMIT
+
+    contract["judge_templates"] = dict(commit=UPSTREAM_COMMIT, hash=digest(PROMPTS))
+    config = dict(
+        config,
+        _judge_cache=str(root / "quality" / "judge"),
+        _deadline=started + budget if budget else None,
+    )
     backend = LocalScorers(config)
     # Match the fixed reference to the actual deployment, never a SeedTTS clone prompt.
     deployment = manifest["contract"].get("deployment") or {}
@@ -389,6 +437,12 @@ def score(directory, config_path=None, time_budget=None):
                     }
                     file = cache / "attempts" / invocation / file.name
                 else:
+                    sample = dict(
+                        sample,
+                        source_dataset=manifest["contract"]["datasets"][cell["dataset"]].get(
+                            "source_dataset", cell["dataset"]
+                        ),
+                    )
                     metrics = evaluate(sample, row, audio, backend, config)
                 record = {
                     "sample_id": sample["id"],
