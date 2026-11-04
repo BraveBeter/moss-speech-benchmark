@@ -76,7 +76,7 @@ def test_explicit_prompt_preserves_reference_and_identity(tmp_path):
         {"role": "user", "content": "目标原文"},
     ]
     assert before["samples_hash"] != metadata["samples_hash"] and metadata["prompt_hash"]
-    assert default[0]["payload"]["messages"][0]["content"].startswith("请逐字朗读")
+    assert default[0]["payload"]["messages"][0]["content"] == "目标原文"
     spec["prompt"]["template"] = "{text} {other}"
     with pytest.raises(ValueError, match="exactly one"):
         prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})

@@ -13,18 +13,9 @@ QA_TASKS = ("s2t", "s2s")
 QUICK_SAMPLES = 20
 QUICK_INFER_BUDGET_S = 2040
 QUICK_SCORE_BUDGET_S = 180
-SUITE_VERSION = "moss-spoken-qa-v4"
-SHORT_ANSWER_PROMPT = {
-    "name": "spoken-qa-short-en-v1",
-    "system": "Answer the spoken question in English using only a short answer phrase. "
-    "Do not repeat the question or add explanations.",
-}
-
+SUITE_VERSION = "moss-spoken-qa-v5"
 NATIVE_TEXT_SYSTEM = "You are a helpful assistant. Respond with text outputs."
-TEXT_ANSWER_PROMPT = {
-    "name": "spoken-qa-native-text-short-en-v1",
-    "system": NATIVE_TEXT_SYSTEM + "\n" + SHORT_ANSWER_PROMPT["system"],
-}
+NATIVE_AUDIO_SYSTEM = "You are a helpful assistant. Respond with spoken outputs."
 
 
 def deferred_evaluations(mode):
@@ -73,6 +64,7 @@ def _records(spec, root):
             {
                 "id": row["audio_filename"],
                 "audio": str(audio_root / row["audio_filename"]),
+                "question": row.get("question", row.get("Questions")),
                 "expected": row.get(
                     "Answer", row.get("answers", row.get("answer_normalized_aliases"))
                 ),
@@ -157,13 +149,6 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
                 raise ValueError(f"Empty text: {sample_id}")
             if "template" in prompt:
                 content = prompt["template"].replace("{text}", content)
-            elif row_task == "t2s":
-                instruction = (
-                    "Read the following text verbatim. Do not add any other words:\n"
-                    if spec["language"] == "en"
-                    else "请逐字朗读以下文本，不添加任何其他内容：\n"
-                )
-                content = instruction + content
         payload = dict(sampling)
         payload.update(
             model=model,
@@ -182,6 +167,7 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
                 "language": spec["language"],
                 "payload": payload,
                 "expected": row.get("expected", row.get("text")),
+                **({"question": row["question"]} if row.get("question") else {}),
             }
         )
     metadata = {
@@ -244,21 +230,11 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
         for task in selected_tasks if named else [spec["task"]]:
             resolved = dict(spec, task=task)
             if named:
-                if task in task_prompts:
-                    resolved["prompt"] = task_prompts[task]
-                else:
-                    resolved.setdefault(
-                        "prompt", TEXT_ANSWER_PROMPT if task == "s2t" else SHORT_ANSWER_PROMPT
-                    )
-                prompt = resolved["prompt"]
-                if task == "s2t" and isinstance(prompt, dict):
-                    system = prompt.get("system")
-                    if (
-                        isinstance(system, str)
-                        and system.strip()
-                        and not system.startswith(NATIVE_TEXT_SYSTEM)
-                    ):
-                        resolved["prompt"] = dict(prompt, system=NATIVE_TEXT_SYSTEM + "\n" + system)
+                official = NATIVE_TEXT_SYSTEM if task == "s2t" else NATIVE_AUDIO_SYSTEM
+                supplied = task_prompts.get(task, spec.get("prompt", {}))
+                if supplied and supplied != {"system": official}:
+                    raise ValueError("Named suites require the official default system prompt")
+                resolved["prompt"] = {"system": official}
             rows, metadata = prepare_dataset(
                 resolved,
                 path.parent,

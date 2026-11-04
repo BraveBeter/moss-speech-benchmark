@@ -43,9 +43,7 @@ def test_fixed_selection_and_only_selected_audio_read(tmp_path):
         assert text[0][0]["payload"]["modalities"] == ["text"]
         assert audio[0][0]["payload"]["modalities"] == ["audio"]
         assert text[0][0]["payload"]["messages"][1:] == audio[0][0]["payload"]["messages"][1:]
-        assert text[0][0]["payload"]["messages"][0]["content"] == (
-            NATIVE_TEXT_SYSTEM + "\n" + audio[0][0]["payload"]["messages"][0]["content"]
-        )
+        assert text[0][0]["payload"]["messages"][0]["content"] == (NATIVE_TEXT_SYSTEM)
     path = tmp_path / "llama_questions.json"
     rows = read_json(path)
     selected = set(original["llama_questions-s2s"][1]["selection"]["ids"])
@@ -314,90 +312,23 @@ async def test_declared_server_must_match_correctness_candidate(
     assert not state["payloads"] and correctness_stub["calls"] == 0
 
 
-async def test_task_prompt_override_preserves_speech_cohort_and_rejects_resume(
-    server, tmp_path, correctness_stub
-):
-    """Explicit text mode must not replace the S2S system prompt or hide failed rows."""
-    url, state = server
-    config = daily_workload(tmp_path)
-    before, _, _ = load_workload(config, "test", True, "quick")
-    value = read_json(config)
-    prompt = {"name": "explicit-text-v1", "system": "Respond with text outputs."}
-    value["task_prompts"] = {"s2t": prompt}
-    write_json(config, value)
-    after, _, _ = load_workload(config, "test", True, "quick")
-    for name in QA_DATASETS:
-        assert after[name + "-s2s"] == before[name + "-s2s"]
-        old, new = before[name + "-s2t"], after[name + "-s2t"]
-        assert old[1]["selection"] == new[1]["selection"]
-        assert old[1]["samples_hash"] != new[1]["samples_hash"]
-        for left, right in zip(old[0], new[0], strict=True):
-            assert left["id"] == right["id"] and left["expected"] == right["expected"]
-            assert left["payload"]["messages"][1:] == right["payload"]["messages"][1:]
-            assert (
-                right["payload"]["messages"][0]["content"]
-                == NATIVE_TEXT_SYSTEM + "\n" + prompt["system"]
-            )
-    correctness_stub["url"] = url
-    options = args(
-        config, url, tmp_path / "quick", "--mode", "quick", "--correctness-config", "fixture.json"
-    )
-    metrics = await run(options)
-    assert len(state["payloads"]) == 432
-    assert sum(item["attempted"] for item in metrics.values()) == 360
-    assert all(item["succeeded"] == 20 for item in metrics.values())
-    value.pop("task_prompts")
-    write_json(config, value)
-    options.resume = True
-    with pytest.raises(ValueError, match="contract mismatch"):
-        await run(options)
-    for invalid in ([], {"t2t": prompt}, {"s2t": "text"}):
-        value["task_prompts"] = invalid
-        write_json(config, value)
-        with pytest.raises(ValueError, match="task_prompts"):
-            load_workload(config, "test", True, "quick")
-
-
 @pytest.mark.parametrize("mode", ["quick", "daily", "full"])
-def test_named_s2t_keeps_native_modality_with_custom_prompts(tmp_path, mode):
-    from moss_speech_bench.storage import digest
+def test_named_suites_use_only_official_defaults_and_reject_added_prompts(tmp_path, mode):
+    from moss_speech_bench.datasets import NATIVE_AUDIO_SYSTEM
 
-    config = daily_workload(tmp_path)
-    value = read_json(config)
-    custom = {"name": "dataset-short", "system": "Answer briefly."}
-    for spec in value["datasets"]:
-        spec["prompt"] = custom
-    write_json(config, value)
-    before = config.read_bytes()
-    datasets, _, _ = load_workload(config, "test", True, mode)
-    assert config.read_bytes() == before
-    for name in QA_DATASETS:
-        text_rows, text_meta = datasets[name + "-s2t"]
-        audio_rows, audio_meta = datasets[name + "-s2s"]
-        effective = text_meta["prompt"]
-        assert effective["system"] == NATIVE_TEXT_SYSTEM + "\nAnswer briefly."
-        assert text_meta["prompt_hash"] == digest(effective)
-        assert text_rows[0]["payload"]["messages"][0]["content"] == effective["system"]
-        assert audio_meta["prompt"] == custom
-        assert audio_rows[0]["payload"]["messages"][0]["content"] == custom["system"]
-    # Existing explicit native prompts are preserved byte for byte, without duplication.
-    explicit = {"name": "explicit", "system": NATIVE_TEXT_SYSTEM + "\nUse a short answer."}
-    value["task_prompts"] = {"s2t": explicit}
-    write_json(config, value)
-    datasets, _, _ = load_workload(config, "test", True, mode)
-    assert all(
-        metadata["prompt"] == explicit
-        for name, (_, metadata) in datasets.items()
-        if name.endswith("-s2t")
-    )
-
-
-def test_empty_s2t_prompt_leaves_processor_native_default_available(tmp_path):
-    config = daily_workload(tmp_path)
-    value = read_json(config)
-    value["task_prompts"] = {"s2t": {}}
-    write_json(config, value)
-    datasets, _, _ = load_workload(config, "test", True, "quick")
-    for name, (rows, _) in datasets.items():
-        if name.endswith("-s2t"):
-            assert rows[0]["payload"]["messages"][0]["role"] == "user"
+    path = daily_workload(tmp_path)
+    datasets, _, _ = load_workload(path, "test", True, mode)
+    for name, (rows, metadata) in datasets.items():
+        expected = NATIVE_TEXT_SYSTEM if name.endswith("-s2t") else NATIVE_AUDIO_SYSTEM
+        assert all(
+            r["payload"]["messages"][0] == {"role": "system", "content": expected} for r in rows
+        )
+        assert metadata["prompt"] == {"system": expected}
+    value = read_json(path)
+    value["task_prompts"] = {"s2t": {"system": "Answer briefly."}}
+    write_json(path, value)
+    with pytest.raises(ValueError, match="official default"):
+        load_workload(path, "test", True, mode)
+    value["task_prompts"] = {"s2t": {"system": NATIVE_TEXT_SYSTEM}}
+    write_json(path, value)
+    assert load_workload(path, "test", True, mode)[0] == datasets
