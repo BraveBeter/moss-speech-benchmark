@@ -560,6 +560,7 @@ def run(args, reference: dict, report: dict, output_json: Path, tensor_path: Pat
                     "pcm_atol": COMPARISON_POLICY["pcm_atol"],
                     "pcm_rtol": COMPARISON_POLICY["pcm_rtol"],
                 },
+                precision_contract=os.environ.get("MOSS_PRECISION_CONTRACT") or None,
             )
     if bias_broadcast:
         processors = decoder.bias_broadcast_processors

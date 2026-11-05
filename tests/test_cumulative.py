@@ -303,3 +303,66 @@ def test_distinct_parameterizations_of_one_factory_keep_every_fixed_case(reverse
     for case in ("False", "True", "default", "disabled", "enabled"):
         assert nodes.count(factory + "[" + case + "]") == 1
     assert len(nodes) == len(set(nodes))
+
+
+def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path):
+    changes = dict(
+        optimizations=[
+            "ar-decode-graph",
+            "ar-serial-decode-graph",
+            "codec-bias-broadcast",
+            "codec-unready-return",
+            "codec-flow-bf16",
+        ],
+        precision_contract="e13-bf16-approx-v1",
+        deployment=dict(
+            ar_graph=True,
+            decode_graph=True,
+            decode_graph_serial_batch=True,
+            broadcast_attention_bias=True,
+            flow_precision="ffn",
+        ),
+        run_vocoder=dict(broadcast_attention_bias=True, flow_precision="ffn"),
+    )
+    load_suite(configuration(tmp_path, **changes))
+    for patch in [
+        dict(precision_contract=None),
+        dict(precision_contract="unknown"),
+        dict(run_vocoder=dict(broadcast_attention_bias=True)),
+        dict(optimizations=changes["optimizations"] + ["codec-cfm-graph"]),
+    ]:
+        with pytest.raises(ValueError):
+            load_suite(configuration(tmp_path, **(changes | patch)))
+    with pytest.raises(ValueError):
+        load_suite(configuration(tmp_path, run_vocoder=dict(flow_precision="ffn")))
+
+
+def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass():
+    selected = ["codec-bias-broadcast", "codec-unready-return", "codec-flow-bf16"]
+    reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
+    report = dict(
+        optimizations=selected,
+        reference=reference,
+        joint_pcm_within_frozen_tolerance=False,
+        precision_contract="e13-bf16-approx-v1",
+        same_precision_pcm_exact=True,
+        cross_precision_statistics=dict(
+            pcm_max_abs=0.9, pcm_relative_l2=0.8, pcm_tensor_cosine=0.7
+        ),
+        code_ledger_exact=True,
+        request_state_isolation_exact=True,
+        rng_isolation_exact=True,
+        cleanup_exact=True,
+        executions={feature: 1 for feature in selected},
+    )
+    validate_codec_qualification(report, selected, reference, "e13-bf16-approx-v1")
+    with pytest.raises(AssertionError):
+        validate_codec_qualification(report, selected, reference)
+    for patch in [
+        dict(same_precision_pcm_exact=False),
+        dict(joint_pcm_within_frozen_tolerance=True),
+        dict(precision_contract="unknown"),
+        dict(rng_isolation_exact=False),
+    ]:
+        with pytest.raises(AssertionError):
+            validate_codec_qualification(report | patch, selected, reference, "e13-bf16-approx-v1")
