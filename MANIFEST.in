@@ -3,3 +3,4 @@ recursive-include examples *.json
 recursive-include tests *.py
 
 include PROTOCOLS.md
+include CODEC_ONLY.md

@@ -1,0 +1,18 @@
+{
+  "protocol": "moss-codec-only-v1",
+  "backend": "hf-native",
+  "decoder_mode": "offline",
+  "physical_gpu": 0,
+  "seed": 42,
+  "python": "/absolute/path/to/model-env/bin/python",
+  "codec_path": "/absolute/path/to/MOSS-Speech-Codec",
+  "codec_revision": "eeec733e4e1dea7da444d332d8e1621ef257414c",
+  "hf_source_root": "/absolute/path/to/original-cosyvoice-source",
+  "corpus": "/absolute/path/to/paired-corpus.jsonl",
+  "assets": [
+    {
+      "path": "/absolute/path/to/MOSS-Speech-Codec/model.safetensors",
+      "sha256": "replace-with-frozen-sha256"
+    }
+  ]
+}

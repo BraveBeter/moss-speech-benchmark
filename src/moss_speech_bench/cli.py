@@ -30,7 +30,17 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--phase",
-        choices=("infer", "report", "score", "all", "correctness", "correctness-report"),
+        choices=(
+            "infer",
+            "report",
+            "score",
+            "all",
+            "correctness",
+            "correctness-report",
+            "codec-infer",
+            "codec-score",
+            "codec-report",
+        ),
         default="infer",
     )
     p.add_argument(
@@ -98,6 +108,24 @@ def check_fresh_output(root, mode):
 
 
 async def run(args):
+    if args.phase.startswith("codec-"):
+        from .codec import compare, infer, render, score
+
+        if args.dry_run or args.resume:
+            raise ValueError("Codec-only uses fresh runs and has no dry-run or implicit resume")
+        if args.phase == "codec-infer":
+            if not args.config:
+                raise ValueError("codec-infer requires --config")
+            result = await asyncio.to_thread(infer, args.config, args.output_dir)
+        elif args.phase == "codec-score":
+            if not args.score_config:
+                raise ValueError("codec-score requires --score-config")
+            result = await asyncio.to_thread(score, args.output_dir, args.score_config)
+        elif args.config:
+            result = compare(read_json(args.config)["runs"], args.output_dir)
+        else:
+            result = render(args.output_dir)
+        return {"codec": {"failed": result["status"] != "complete"}}
     if args.mode == "quickly":
         args.mode = "quick"
     if args.phase in ("correctness", "correctness-report"):

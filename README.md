@@ -1,6 +1,6 @@
 # MOSS-Speech benchmark client
 
-独立客户端，连接外层已启动的 SGLang-Omni 服务。常规运行统一按 **Correctness → Inference/Performance → Offline Quality → Report** 执行；正式推理输出保存一次，评分不重发生成请求。客户端不下载模型、不管理服务或申请 GPU。
+独立客户端，连接外层已启动的 SGLang-Omni 服务。常规运行统一按 **Correctness → Inference/Performance → Offline Quality → Report** 执行；正式推理输出保存一次，评分不重发生成请求。客户端不下载模型、不管理服务或申请 GPU。已授权本机环境下的独立 [Codec-only 重建质量协议](CODEC_ONLY.md) 使用直接组件 API，支持 HF 原生、SG FP32 与局部 BF16 的 Encoder→Decoder 配对比较。
 
 使用边界：仅在开展模型正确性/精度对齐、生成质量或性能评测时使用本客户端。日常单元测试、Graph/Kernel专项开发测试、调试、profiling、静态检查和构建/打包，使用所属仓库工具，不要求经本客户端，也不自动触发完整评测。模型分支正式验收继续执行正确性→Quick；开发检查通过与正式评测通过分别记录。
 

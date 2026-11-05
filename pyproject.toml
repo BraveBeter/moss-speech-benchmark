@@ -41,7 +41,7 @@ force-exclude = true
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.setuptools.data-files]
-"share/moss-speech-benchmark" = ["ORIGIN.md", "origin.json", "CORRECTNESS.md", "PROTOCOLS.md", "SUMMARY_TEMPLATE.md", "JUDGE_PROTOCOL.md", "JUDGE_UPSTREAM_LICENSE.txt"]
+"share/moss-speech-benchmark" = ["ORIGIN.md", "origin.json", "CORRECTNESS.md", "PROTOCOLS.md", "SUMMARY_TEMPLATE.md", "JUDGE_PROTOCOL.md", "JUDGE_UPSTREAM_LICENSE.txt", "CODEC_ONLY.md"]
 
 [tool.setuptools.package-data]
 "moss_speech_bench.providers" = ["*.json"]
