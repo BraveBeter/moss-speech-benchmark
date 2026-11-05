@@ -62,7 +62,6 @@ def infer(config, root):
             from sglang_omni.models.moss_speech.components.codec_adapter import (
                 MossSpeechCodecAdapter,
             )
-            from sglang_omni.models.moss_speech.components.flow_precision import FlowBF16Scope
 
             codec = contexts.enter_context(
                 MossSpeechCodecAdapter(
@@ -71,6 +70,8 @@ def infer(config, root):
             )
             assert codec.decoder is not None
             if config["backend"] == "sg-bf16":
+                from sglang_omni.models.moss_speech.components.flow_precision import FlowBF16Scope
+
                 for stage in ("ffn", "attention"):
                     scopes.append(
                         contexts.enter_context(
