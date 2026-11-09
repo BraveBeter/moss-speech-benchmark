@@ -35,6 +35,7 @@ FEATURES = tuple(
             "codec-flow-bf16",
             "codec-sdpa-bf16",
             "codec-resident-bf16",
+            "codec-storage-bf16",
             "codec-score-release",
             "direct-lt",
             "context-startup-schedule",
@@ -46,6 +47,7 @@ STREAMING_CODEC_FEATURES = (
     "codec-flow-bf16",
     "codec-sdpa-bf16",
     "codec-resident-bf16",
+    "codec-storage-bf16",
     "codec-bias-broadcast",
     "codec-cfm-graph",
     "direct-lt",
@@ -91,6 +93,9 @@ def validate_codec_qualification(report, selected, reference, precision_contract
         assert report["bf16_weight_residency"] is True
         for field in ("resident_weight_bytes", "resident_parameter_copies"):
             assert type(report[field]) is int and report[field] > 0
+    if "codec-storage-bf16" in expected:
+        assert report["bf16_parameter_storage"] is True
+        assert report["fp32_cpu_backup_bytes"] == 2 * report["resident_weight_bytes"]
 
 
 def validate_ar_qualification(report, selected):
@@ -193,6 +198,7 @@ def validate(config):
                 "ffn_attention",
                 "ffn_attention_sdpa",
                 "ffn_attention_sdpa_resident",
+                "ffn_attention_sdpa_storage",
             )
             or config.get("run_vocoder", {}).get("flow_precision") != precision
             or "codec-cfm-graph" in selected
@@ -206,11 +212,16 @@ def validate(config):
     ):
         raise ValueError("Undeclared BF16 Flow precision")
     if ("codec-sdpa-bf16" in selected) != (
-        precision in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident")
+        precision
+        in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage")
     ):
         raise ValueError("BF16 SDPA requires its explicit activation and regression coverage")
-    if ("codec-resident-bf16" in selected) != (precision == "ffn_attention_sdpa_resident"):
+    if ("codec-resident-bf16" in selected) != (
+        precision in ("ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage")
+    ):
         raise ValueError("BF16 resident weights require explicit activation and ownership proof")
+    if ("codec-storage-bf16" in selected) != (precision == "ffn_attention_sdpa_storage"):
+        raise ValueError("BF16 parameter storage requires explicit activation and CPU backup proof")
     schedule = deployment.get("stream_startup_schedule")
     if "context-startup-schedule" in selected:
         if schedule != "6_8_align25" or "context-small-first" in selected:

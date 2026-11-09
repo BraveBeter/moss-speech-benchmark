@@ -1075,5 +1075,15 @@
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[65]",
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[1500]",
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[1512]"
+  ],
+  "C01-codec-storage-bf16": [
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_parameter_storage_matches_resident_and_restores_exact_weights[cpu]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_parameter_storage_rejects_training_and_gradient_calls",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_parameter_storage_partial_entry_restores_fp32",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn_attention_sdpa_storage]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_flow_rejects_unqualified_fp32_graph_combination[ffn_attention_sdpa_storage]"
+  ],
+  "C03-codec-storage-bf16": [
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_parameter_storage_matches_resident_and_restores_exact_weights[cuda]"
   ]
 }

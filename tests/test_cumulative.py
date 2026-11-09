@@ -305,7 +305,10 @@ def test_distinct_parameterizations_of_one_factory_keep_every_fixed_case(reverse
     assert len(nodes) == len(set(nodes))
 
 
-@pytest.mark.parametrize("precision", ["ffn", "ffn_attention_sdpa", "ffn_attention_sdpa_resident"])
+@pytest.mark.parametrize(
+    "precision",
+    ["ffn", "ffn_attention_sdpa", "ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage"],
+)
 def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path, precision):
     changes = dict(
         optimizations=[
@@ -325,10 +328,16 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
         ),
         run_vocoder=dict(broadcast_attention_bias=True, flow_precision=precision),
     )
-    if precision in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident"):
+    if precision in (
+        "ffn_attention_sdpa",
+        "ffn_attention_sdpa_resident",
+        "ffn_attention_sdpa_storage",
+    ):
         changes["optimizations"].append("codec-sdpa-bf16")
-    if precision == "ffn_attention_sdpa_resident":
+    if precision in ("ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage"):
         changes["optimizations"].append("codec-resident-bf16")
+    if precision == "ffn_attention_sdpa_storage":
+        changes["optimizations"].append("codec-storage-bf16")
     load_suite(configuration(tmp_path, **changes))
     for patch in [
         dict(precision_contract=None),
@@ -340,7 +349,7 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
                 feature for feature in changes["optimizations"] if feature != "codec-resident-bf16"
             ]
         )
-        if precision == "ffn_attention_sdpa_resident"
+        if precision in ("ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage")
         else dict(optimizations=changes["optimizations"] + ["codec-resident-bf16"]),
         dict(
             optimizations=[
@@ -354,13 +363,18 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
         load_suite(configuration(tmp_path, run_vocoder=dict(flow_precision="ffn")))
 
 
-@pytest.mark.parametrize("sdpa,resident", [(False, False), (True, False), (True, True)])
-def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident):
+@pytest.mark.parametrize(
+    "sdpa,resident,storage",
+    [(False, False, False), (True, False, False), (True, True, False), (True, True, True)],
+)
+def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident, storage):
     selected = ["codec-bias-broadcast", "codec-unready-return", "codec-flow-bf16"]
     if sdpa:
         selected.append("codec-sdpa-bf16")
     if resident:
         selected.append("codec-resident-bf16")
+    if storage:
+        selected.append("codec-storage-bf16")
     reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
     report = dict(
         optimizations=selected,
@@ -380,6 +394,8 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident
         bf16_weight_residency=resident,
         resident_weight_bytes=4 if resident else 0,
         resident_parameter_copies=1 if resident else 0,
+        bf16_parameter_storage=storage,
+        fp32_cpu_backup_bytes=8 if storage else 0,
     )
     validate_codec_qualification(report, selected, reference, "e13-bf16-approx-v1")
     with pytest.raises(AssertionError):
@@ -407,6 +423,12 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident
             dict(resident_weight_bytes=0),
             dict(resident_parameter_copies=0),
         ):
+            with pytest.raises(AssertionError):
+                validate_codec_qualification(
+                    report | patch, selected, reference, "e13-bf16-approx-v1"
+                )
+    if storage:
+        for patch in (dict(bf16_parameter_storage=False), dict(fp32_cpu_backup_bytes=0)):
             with pytest.raises(AssertionError):
                 validate_codec_qualification(
                     report | patch, selected, reference, "e13-bf16-approx-v1"

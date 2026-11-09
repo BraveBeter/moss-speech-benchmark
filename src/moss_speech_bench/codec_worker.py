@@ -77,11 +77,20 @@ def infer(config, root):
                         dict(bf16_sdpa=True)
                         if stage == "attention"
                         and config["flow_precision"]
-                        in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident")
+                        in (
+                            "ffn_attention_sdpa",
+                            "ffn_attention_sdpa_resident",
+                            "ffn_attention_sdpa_storage",
+                        )
                         else {}
                     )
-                    if config["flow_precision"] == "ffn_attention_sdpa_resident":
+                    if config["flow_precision"] in (
+                        "ffn_attention_sdpa_resident",
+                        "ffn_attention_sdpa_storage",
+                    ):
                         options["resident_weights"] = True
+                    if config["flow_precision"] == "ffn_attention_sdpa_storage":
+                        options["store_bf16_parameters"] = True
                     scopes.append(
                         contexts.enter_context(
                             FlowBF16Scope(codec.decoder.flow.decoder.estimator, stage, **options)
@@ -155,8 +164,25 @@ def infer(config, root):
                 for scope in scopes
                 for operator in scope.operators
             )
-            assert all(parameter.dtype == torch.float32 for parameter in codec.decoder.parameters())
-        if config.get("flow_precision") in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident"):
+            selected_parameters = {
+                id(parameter)
+                for scope in scopes
+                for operator in scope.operators
+                for parameter in operator.module.parameters()
+            }
+            for parameter in codec.decoder.parameters():
+                expected_dtype = (
+                    torch.bfloat16
+                    if config["flow_precision"] == "ffn_attention_sdpa_storage"
+                    and id(parameter) in selected_parameters
+                    else torch.float32
+                )
+                assert parameter.dtype is expected_dtype
+        if config.get("flow_precision") in (
+            "ffn_attention_sdpa",
+            "ffn_attention_sdpa_resident",
+            "ffn_attention_sdpa_storage",
+        ):
             processors = [processor for scope in scopes for processor in scope.sdpa_processors]
             assert processors and all(
                 processor.bf16_sdpa_calls == processor.broadcast_calls > 0
@@ -167,7 +193,10 @@ def infer(config, root):
             )
             report["bf16_sdpa_executions"] = sum(p.bf16_sdpa_calls for p in processors)
             report["bf16_sdpa_mask_broadcast"] = True
-        if config.get("flow_precision") == "ffn_attention_sdpa_resident":
+        if config.get("flow_precision") in (
+            "ffn_attention_sdpa_resident",
+            "ffn_attention_sdpa_storage",
+        ):
             operators = [operator for scope in scopes for operator in scope.operators]
             assert operators and all(
                 operator.forward.resident_weights
@@ -182,6 +211,22 @@ def infer(config, root):
             report["resident_parameter_copies"] = sum(
                 operator.forward.parameter_copies for operator in operators
             )
+        if config.get("flow_precision") == "ffn_attention_sdpa_storage":
+            assert all(
+                operator.forward.store_bf16_parameters
+                and operator.module.weight.data_ptr() == operator.forward.resident_weight.data_ptr()
+                for operator in operators
+            )
+            assert all(
+                backup.device.type == "cpu" and backup.dtype is torch.float32
+                for operator in operators
+                for backup in operator.forward.fp32_cpu_parameters.values()
+            )
+            report["bf16_parameter_storage"] = True
+            report["fp32_cpu_backup_bytes"] = sum(
+                operator.forward.cpu_backup_parameter_bytes for operator in operators
+            )
+            assert report["fp32_cpu_backup_bytes"] == 2 * report["resident_weight_bytes"]
         report["status"] = (
             "complete" if all(row["status"] == "complete" for row in report["rows"]) else "partial"
         )

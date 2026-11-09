@@ -14,6 +14,7 @@ FEATURES = (
     "mixed-modalities",
 )
 MARKERS = {
+    "codec-storage-bf16": "MOSS_FLOW_BF16_STORAGE_ACTIVE",
     "codec-resident-bf16": "MOSS_FLOW_BF16_RESIDENT_ACTIVE",
     "codec-sdpa-bf16": "MOSS_CODEC_SDPA_BF16_ACTIVE",
     "codec-bias-broadcast": "MOSS_CODEC_BIAS_BROADCAST_ACTIVE",

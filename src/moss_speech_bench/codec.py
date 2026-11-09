@@ -44,7 +44,12 @@ def load_config(path):
         raise ValueError("A fixed integer seed is required")
     precision = config.get("flow_precision")
     allowed_precision = (
-        ("ffn_attention", "ffn_attention_sdpa", "ffn_attention_sdpa_resident")
+        (
+            "ffn_attention",
+            "ffn_attention_sdpa",
+            "ffn_attention_sdpa_resident",
+            "ffn_attention_sdpa_storage",
+        )
         if config["backend"] == "sg-bf16"
         else (None,)
     )
