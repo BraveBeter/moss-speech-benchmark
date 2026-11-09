@@ -14,6 +14,7 @@ FEATURES = (
     "mixed-modalities",
 )
 MARKERS = {
+    "codec-sdpa-bf16": "MOSS_CODEC_SDPA_BF16_ACTIVE",
     "codec-bias-broadcast": "MOSS_CODEC_BIAS_BROADCAST_ACTIVE",
     "ar-serial-decode-graph": "serial batch decode graph replay active",
     "ar-batched-rope": "batched RoPE reuse active",

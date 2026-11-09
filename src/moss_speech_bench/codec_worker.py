@@ -73,9 +73,14 @@ def infer(config, root):
                 from sglang_omni.models.moss_speech.components.flow_precision import FlowBF16Scope
 
                 for stage in ("ffn", "attention"):
+                    options = (
+                        dict(bf16_sdpa=True)
+                        if stage == "attention" and config["flow_precision"] == "ffn_attention_sdpa"
+                        else {}
+                    )
                     scopes.append(
                         contexts.enter_context(
-                            FlowBF16Scope(codec.decoder.flow.decoder.estimator, stage)
+                            FlowBF16Scope(codec.decoder.flow.decoder.estimator, stage, **options)
                         )
                     )
             report["loaded_sources"]["sg_codec"] = dict(
@@ -147,6 +152,17 @@ def infer(config, root):
                 for operator in scope.operators
             )
             assert all(parameter.dtype == torch.float32 for parameter in codec.decoder.parameters())
+        if config.get("flow_precision") == "ffn_attention_sdpa":
+            processors = [processor for scope in scopes for processor in scope.sdpa_processors]
+            assert processors and all(
+                processor.bf16_sdpa_calls == processor.broadcast_calls > 0
+                and processor.fallback_calls == 0
+                and processor.last_head_stride == 0
+                and processor.last_sdpa_dtype is torch.bfloat16
+                for processor in processors
+            )
+            report["bf16_sdpa_executions"] = sum(p.bf16_sdpa_calls for p in processors)
+            report["bf16_sdpa_mask_broadcast"] = True
         report["status"] = (
             "complete" if all(row["status"] == "complete" for row in report["rows"]) else "partial"
         )

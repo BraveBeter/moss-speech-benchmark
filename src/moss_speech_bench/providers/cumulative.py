@@ -32,6 +32,8 @@ FEATURES = tuple(
             *FLAGS.values(),
             *MICRO_SUITES,
             "codec-cfm-graph",
+            "codec-flow-bf16",
+            "codec-sdpa-bf16",
             "codec-score-release",
             "direct-lt",
             "context-startup-schedule",
@@ -40,6 +42,8 @@ FEATURES = tuple(
 )
 COMPUTE_AR_FEATURES = (*AR_FEATURES, "ar-serial-decode-graph", "ar-batched-rope")
 STREAMING_CODEC_FEATURES = (
+    "codec-flow-bf16",
+    "codec-sdpa-bf16",
     "codec-bias-broadcast",
     "codec-cfm-graph",
     "direct-lt",
@@ -53,20 +57,34 @@ STREAMING_CODEC_FEATURES = (
 )
 
 
-def validate_codec_qualification(report, selected, reference):
+def validate_codec_qualification(report, selected, reference, precision_contract=None):
     expected = set(selected) & set(STREAMING_CODEC_FEATURES)
     if len(expected) < 2:
         assert report is None
         return
     assert set(report["optimizations"]) == expected
     assert report["reference"] == reference, "Cumulative codec used another reference"
-    assert report["joint_pcm_within_frozen_tolerance"] is True
+    if "codec-flow-bf16" in expected:
+        assert precision_contract == "e13-bf16-approx-v1"
+        assert report["precision_contract"] == precision_contract
+        assert report["joint_pcm_within_frozen_tolerance"] is False
+        assert report["same_precision_pcm_exact"] is True
+        assert set(report["cross_precision_statistics"]) == {
+            "pcm_max_abs",
+            "pcm_relative_l2",
+            "pcm_tensor_cosine",
+        }
+    else:
+        assert precision_contract is None
+        assert report["joint_pcm_within_frozen_tolerance"] is True
     assert report["code_ledger_exact"] is True
     assert report["request_state_isolation_exact"] is True
     assert report["rng_isolation_exact"] is True
     assert report["cleanup_exact"] is True
     for feature in expected:
         assert type(report["executions"][feature]) is int and report["executions"][feature] > 0
+    if "codec-sdpa-bf16" in expected:
+        assert report["bf16_sdpa_mask_broadcast"] is True
 
 
 def validate_ar_qualification(report, selected):
@@ -158,6 +176,24 @@ def validate(config):
             raise ValueError("Invalid cumulative CFM graph length")
     elif length is not None:
         raise ValueError("Undeclared cumulative CFM graph")
+    precision = deployment.get("flow_precision")
+    if "codec-flow-bf16" in selected:
+        if (
+            config.get("precision_contract") != "e13-bf16-approx-v1"
+            or precision not in ("ffn", "attention", "ffn_attention", "ffn_attention_sdpa")
+            or config.get("run_vocoder", {}).get("flow_precision") != precision
+            or "codec-cfm-graph" in selected
+            or not {"codec-bias-broadcast", "codec-unready-return"} <= set(selected)
+        ):
+            raise ValueError("Invalid BF16 approximate-inference contract or activation")
+    elif (
+        precision is not None
+        or config.get("run_vocoder", {}).get("flow_precision") is not None
+        or config.get("precision_contract") is not None
+    ):
+        raise ValueError("Undeclared BF16 Flow precision")
+    if ("codec-sdpa-bf16" in selected) != (precision == "ffn_attention_sdpa"):
+        raise ValueError("BF16 SDPA requires its explicit activation and regression coverage")
     schedule = deployment.get("stream_startup_schedule")
     if "context-startup-schedule" in selected:
         if schedule != "6_8_align25" or "context-small-first" in selected:

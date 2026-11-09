@@ -101,7 +101,7 @@ source closure, numerical settings and hashes. Candidate outputs are never golde
 
 ```bash
 # Result location is independent of the checkout/worktree working directory.
-MOSS_BENCHMARK_RESULTS_ROOT=../benchmark-results
+MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
 
 # CPU selection and processor; intentionally incomplete as a full-suite result
 moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
@@ -317,3 +317,10 @@ When at least two streaming Codec strategies are selected, C06 additionally requ
 After complete named Quick, audit the same fresh serving log. Every required marker must be observed, including both serial B2/B4 sizes and native execution evidence. Exact-length prefill may retain the existing explicit activation exception when the fixed workload does not hit its registered lengths; this never establishes a prefill performance gain.
 
 Freeze one client commit across matched measurements whenever possible. If cumulative qualification needs a client update, an earlier matched run can remain a reference only with an archived exact-commit source audit proving every transport, request, timing, parsing, statistics and workload module byte-identical, unchanged HF policy/assets, and identical legacy regression selections. Explicitly record both client identities and the allowed qualification-only difference; preserve the earlier manifest and raw metrics. Any measurement or workload change requires rerunning the affected references. This exception does not permit changing a numerical tolerance, relabeling an old runtime identity, or treating an unqualified candidate as passed.
+
+
+### E13 BF16 approximate Flow contract
+
+The explicit cumulative feature `codec-flow-bf16` requires `precision_contract: e13-bf16-approx-v1`, matching deployment and vocoder precision (`ffn`, `attention`, `ffn_attention` or `ffn_attention_sdpa`), bias broadcasting and unready-return. It excludes the existing FP32 CFM graph. All unchanged HF checks and offline FP32 Codec tolerances remain unchanged. C06 records cross-precision streaming PCM errors as diagnostics, requires actual BF16 operator execution and exact same-precision serial/interleaved PCM, sample accounting, RNG and cleanup. It does not claim streaming PCM passed the FP32 tolerance. End-to-end frozen-output quality is a separate required decision: English WER and Chinese CER may increase at most 1 percentage point, WavLM SIM (0–100) mean may decrease at most 2 points. Numerical error, tensor cosine, UTMOS and clipping are statistics only. C06 structural success alone does not qualify these quality gates. CLI, performance inputs, repetitions and timing are unchanged.
+
+The `ffn_attention_sdpa` profile additionally requires `codec-sdpa-bf16`, four real CUDA mask/boundary checks, C06 proof of BF16 SDPA with zero-stride head bias broadcasting, and a fresh `MOSS_CODEC_SDPA_BF16_ACTIVE` service marker. The live bias is converted before head expansion; the source FP32 bias stays read-only. Omitting the new feature or its actual execution proof fails qualification.
