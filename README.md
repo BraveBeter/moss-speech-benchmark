@@ -30,7 +30,7 @@ pip install -e '.[quality,utmos]'
 
 配置参考 [daily.json](examples/daily.json)，三种模式共享这份配置。替换本地CSV/audio_root和固定Dataset Revision。CSV支持OpenAudioBench原始 `audio_filename` 与 `Answer`、`answers`或`answer_normalized_aliases`；本地JSON列表也可用于开发。数量校验不等于官方版本校验，必须保留来源revision和文件hash。
 
-Quick从三个完整CSV清单选样，先核验300/1000/1000总数与全部ID唯一，再按 `SHA256(dataset_id, subset_seed, sample_id)` 固定选20个，默认seed42。只读选中音频；S2T/S2S共享同一组ID及原音频字节，分别保存各自payload/hash。改变行序不改变子集；换子集、任务、提示词、预算须建立新baseline。
+Quick从三个完整CSV清单选样，先核验300/1000/1000总数与全部ID唯一，再按 `SHA256(dataset_id, subset_seed, sample_id)` 固定选20个，默认seed42。仅语音输入模式读取选中音频；四种模式共享同一组ID，语音输入复用原音频字节，分别保存各自payload/hash。改变行序不改变子集；换子集、任务、提示词、预算须建立新baseline。
 
 数据源及公开规模见[固定OpenAudioBench版本](https://huggingface.co/datasets/baichuan-inc/OpenAudioBench/blob/98f8fa0d5fa7e530ec8e6f097b55f10b003d111b/README.md)。不在CLI中隐式下载数据或修改数据。
 
@@ -107,7 +107,7 @@ Quick、Daily、Full 固定三轮（`--repeats 3`，其他值使用 custom）。
 
 当前生成协议为v5：三个集合仅使用官方默认的文字/语音System，不再追加简短答案等评测提示词。Quick/Daily/Full拒绝附加prompt覆盖；预热及三轮平均保持。v4及更早的提示词和EM仅作历史证据，新旧运行不能直接比较。
 
-质量评分改为第三方Judge：S2T判已有文字，S2S对已保存音频ASR后判分，同时保留UTMOS。固定复用Kimi-Audio-Evalkit的三个OpenAudioBench判分模板；无Judge或失败时明确报告不可评分，不回退到精确匹配。配置`examples/scoring.json`中的endpoint、模型与版本，凭证从环境变量读取。原始题面须随输入冻结，不传给被测模型。详细论文依据、复现边界、缓存和许可见[JUDGE_PROTOCOL.md](JUDGE_PROTOCOL.md)。
+质量评分使用第三方Judge：T2T/S2T判已有文字，T2S/S2S对已保存音频ASR后判分，同时保留UTMOS。固定复用Kimi-Audio-Evalkit的三个OpenAudioBench判分模板；无Judge或失败时明确报告不可评分，不回退到精确匹配。配置`examples/scoring.json`中的endpoint、模型与版本，凭证从环境变量读取。原始题面随输入冻结，并按所选模态提供给被测模型；参考答案与Judge指令仅用于离线评分。详细论文依据、复现边界、缓存和许可见[JUDGE_PROTOCOL.md](JUDGE_PROTOCOL.md)。
 
 ## 指标、产物与恢复
 
@@ -144,7 +144,7 @@ python -m build
 
 A custom JSON dataset may use `"task": "mixed"`; every row must then declare exactly one supported `task` (`t2t`, `t2s`, `s2t`, `s2s`). For example, two rows with `task: t2t` and `task: t2s` run in the same dataset/concurrency cell, rather than being serialized as different datasets. Each archived input and output retains its actual task and payload. The dataset language still applies to every row; use separate datasets for different languages. A conflicting row task in a homogeneous dataset is rejected. This explicit custom entry does not change Quick/Daily/Full task selection, and HTTP concurrency remains distinct from engine batch size.
 
-For new eager-base qualification, set `context_remaining: true` in the correctness config and select the appropriate compute profile described in [CORRECTNESS.md](CORRECTNESS.md). This flag composes with Graph, mixed-admission and native-norm profiles; it does not replace their mandatory specialized checks.
+For legacy eager-base qualification, set `context_remaining: true` in the correctness config and select the appropriate compute profile described in [LEGACY_CORRECTNESS.md](LEGACY_CORRECTNESS.md). This flag composes with Graph, mixed-admission and native-norm profiles; it does not replace their mandatory specialized checks.
 
 
 AR optimization combinations use the explicit `ar-combination` correctness profile. Declare every enabled strategy, qualify its actual CUDA path and preserve independent HF comparisons; complete C00–C08 before Quick, then audit actual serving activation after all matched workloads. See [the legacy combination contract](LEGACY_CORRECTNESS.md#explicit-ar-combinations) for fields and the final audit command.
@@ -169,7 +169,7 @@ moss-speech-bench --mode quick --config benchmark-client/examples/multimodal-qa.
   --output-dir benchmark-results/candidate-t2t-quick
 ```
 
-将 `--tasks` 换为其他一项即可分别评测；`--tasks t2s,s2s,t2t,s2t` 在同一运行中建立各自的数据集/任务 cells，不混合指标。四条路径共享稳定问题 ID，文本输入读取题面，语音输入读取对应原始音频；参考答案只进入离线评分。Quick 单路径为 180 正式+36预热，四路径为720正式+144预热。
+未传 `--tasks` 时使用配置中的任务列表，旧配置默认 S2T/S2S。将 `--tasks` 换为其他一项即可分别评测；`--tasks t2s,s2s,t2t,s2t` 在同一运行中建立各自的数据集/任务 cells，不混合指标。四条路径共享稳定问题 ID，文本输入读取题面，语音输入读取对应原始音频；参考答案只进入离线评分。Quick 单路径为 180 正式+36预热，四路径为720正式+144预热。
 
 新 HF 正确性适配器当前只覆盖 T2S，其他模式需要相应 HF 输入处理、AR/Codec 和协议断言后才能正式放行；能力声明不等于精度证书。尚未实现的模式明确拒绝，不当作跳过后通过。
 
