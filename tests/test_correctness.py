@@ -1034,8 +1034,9 @@ async def test_cli_sigterm_reaps_independent_provider_session(tmp_path, ignore_t
         "    (output / 'stopped.json').write_text(json.dumps({'pid': os.getpid()}))\n"
         "    raise SystemExit(0)\n"
         f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if ignore_term else 'stop'})\n"
-        "(output / 'started.json').write_text(json.dumps(\n"
+        "(output / 'started.json.tmp').write_text(json.dumps(\n"
         "    {'pid': os.getpid(), 'pgid': os.getpgrp()}))\n"
+        "(output / 'started.json.tmp').replace(output / 'started.json')\n"
         "while True: signal.pause()\n"
     )
     config = dict(
