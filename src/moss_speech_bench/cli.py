@@ -55,7 +55,10 @@ def parser():
         type=int,
         help="Quick only: 20..50 questions per dataset, default 20",
     )
-    p.add_argument("--tasks", help="Speech-QA paths, default s2t,s2s; e.g. s2s only")
+    p.add_argument(
+        "--tasks",
+        help="QA paths selected separately or comma-separated: t2s,s2s,t2t,s2t; within service.tasks",
+    )
     p.add_argument("--subset-seed", type=int, help="Quick only: fixed selection seed, default 42")
     p.add_argument(
         "--time-budget",
