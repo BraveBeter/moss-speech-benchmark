@@ -134,7 +134,7 @@ def codec(config, output):
     assert all(p.dtype == torch.float32 for p in model.parameters())
     wave, rate = torchaudio.load(config["voice_wav"])
     if rate != 24000:
-        wave = torchaudio.functional.resample(wave, rate, 24000)
+        wave = torchaudio.transforms.Resample(rate, 24000)(wave)
     codes = model.encode([config["voice_wav"]], batch_size=1)[0]
     voice_code_count = len(codes)
     mel, _ = model._extract_speech_feat(wave)
