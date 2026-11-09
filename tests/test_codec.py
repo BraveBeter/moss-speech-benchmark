@@ -55,7 +55,9 @@ def test_codec_pairs_use_actual_target_text_and_each_reference(tmp_path):
         codec.load_config(path)
 
 
-@pytest.mark.parametrize("precision", ["ffn_attention", "ffn_attention_sdpa"])
+@pytest.mark.parametrize(
+    "precision", ["ffn_attention", "ffn_attention_sdpa", "ffn_attention_sdpa_resident"]
+)
 def test_codec_bf16_profiles_require_explicit_clean_source(tmp_path, monkeypatch, precision):
     path, _ = configuration(tmp_path)
     spec = read_json(path) | dict(

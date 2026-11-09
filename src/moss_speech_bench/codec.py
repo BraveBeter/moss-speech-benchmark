@@ -44,7 +44,9 @@ def load_config(path):
         raise ValueError("A fixed integer seed is required")
     precision = config.get("flow_precision")
     allowed_precision = (
-        ("ffn_attention", "ffn_attention_sdpa") if config["backend"] == "sg-bf16" else (None,)
+        ("ffn_attention", "ffn_attention_sdpa", "ffn_attention_sdpa_resident")
+        if config["backend"] == "sg-bf16"
+        else (None,)
     )
     if precision not in allowed_precision:
         raise ValueError("Precision must match the selected Codec backend")

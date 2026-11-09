@@ -75,9 +75,13 @@ def infer(config, root):
                 for stage in ("ffn", "attention"):
                     options = (
                         dict(bf16_sdpa=True)
-                        if stage == "attention" and config["flow_precision"] == "ffn_attention_sdpa"
+                        if stage == "attention"
+                        and config["flow_precision"]
+                        in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident")
                         else {}
                     )
+                    if config["flow_precision"] == "ffn_attention_sdpa_resident":
+                        options["resident_weights"] = True
                     scopes.append(
                         contexts.enter_context(
                             FlowBF16Scope(codec.decoder.flow.decoder.estimator, stage, **options)
@@ -152,7 +156,7 @@ def infer(config, root):
                 for operator in scope.operators
             )
             assert all(parameter.dtype == torch.float32 for parameter in codec.decoder.parameters())
-        if config.get("flow_precision") == "ffn_attention_sdpa":
+        if config.get("flow_precision") in ("ffn_attention_sdpa", "ffn_attention_sdpa_resident"):
             processors = [processor for scope in scopes for processor in scope.sdpa_processors]
             assert processors and all(
                 processor.bf16_sdpa_calls == processor.broadcast_calls > 0
@@ -163,6 +167,21 @@ def infer(config, root):
             )
             report["bf16_sdpa_executions"] = sum(p.bf16_sdpa_calls for p in processors)
             report["bf16_sdpa_mask_broadcast"] = True
+        if config.get("flow_precision") == "ffn_attention_sdpa_resident":
+            operators = [operator for scope in scopes for operator in scope.operators]
+            assert operators and all(
+                operator.forward.resident_weights
+                and operator.forward.resident_parameter_bytes > 0
+                and operator.forward.parameter_copies
+                == 1 + int(operator.forward.resident_bias is not None)
+                for operator in operators
+            )
+            report["resident_weight_bytes"] = sum(
+                operator.forward.resident_parameter_bytes for operator in operators
+            )
+            report["resident_parameter_copies"] = sum(
+                operator.forward.parameter_copies for operator in operators
+            )
         report["status"] = (
             "complete" if all(row["status"] == "complete" for row in report["rows"]) else "partial"
         )

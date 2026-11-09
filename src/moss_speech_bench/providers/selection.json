@@ -1055,6 +1055,16 @@
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn_attention]"
   ],
   "C03-codec-flow-bf16": [],
+  "C01-codec-resident-bf16": [
+    "tests/unit_test/moss_speech/test_codec.py::test_resident_bf16_linear_matches_autocast_and_releases_copies[cpu]",
+    "tests/unit_test/moss_speech/test_codec.py::test_resident_bf16_rejects_active_lora",
+    "tests/unit_test/moss_speech/test_codec.py::test_resident_bf16_failed_entry_releases_partial_state",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn_attention_sdpa_resident]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_flow_rejects_unqualified_fp32_graph_combination[ffn_attention_sdpa_resident]"
+  ],
+  "C03-codec-resident-bf16": [
+    "tests/unit_test/moss_speech/test_codec.py::test_resident_bf16_linear_matches_autocast_and_releases_copies[cuda]"
+  ],
   "C01-codec-sdpa-bf16": [
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_requires_live_bias_and_full_projection_stage",
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_flow_rejects_unqualified_fp32_graph_combination[ffn_attention_sdpa]",

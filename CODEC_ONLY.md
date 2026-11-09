@@ -49,3 +49,5 @@ python -m moss_speech_bench --phase codec-report --config comparison.json --outp
 Comparison requires identical corpus, Codec assets, seed and decode mode, and verifies target/prompt Encoder codes match. It retains absolute WER/CER/SIM, actual denominators and failures for each backend. A subset is a regression screen, not a full reproduction of paper numbers. Codec quality does not replace C00–C08, HTTP Quick or end-to-end latency tests.
 
 M2 additionally records positive BF16 SDPA execution counts and requires zero-stride head bias broadcasting without fallback. Its existing FP32 solver, noise and HiFT remain unchanged. These offline results do not establish streaming reconstruction quality.
+
+M3 uses `flow_precision: "ffn_attention_sdpa_resident"`: the M2 precision policy with resident BF16 compute-weight copies for unadapted Linear operators. FP32 master parameters remain unchanged; resident storage bytes and preparation copies are reported explicitly, without a memory-halving claim. Copies are owned by the fixed Codec lifetime and cleared on close. Encoder, solver and HiFT stay FP32.
