@@ -271,3 +271,32 @@ async def test_worker_cancellation_terminates_owned_process(tmp_path):
         await task
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
+
+
+async def test_failed_frontend_resume_retains_decoder_worker_evidence(monkeypatch, tmp_path):
+    from moss_speech_bench import hf_regression
+
+    calls = []
+    monkeypatch.setattr(
+        hf_regression, "preflight", lambda _: dict(status="pass", checks=[dict(status="pass")])
+    )
+
+    async def worker(config, kind, phase, output):
+        calls.append(phase)
+        output.mkdir(parents=True)
+        write_json(output / (phase + ".json"), dict(status="complete"))
+
+    def numerical(gate, config, root, candidate):
+        assert (candidate / "codec.json").exists()
+        return dict(
+            status="fail" if gate == "C05" else "pass",
+            checks=[dict(status="fail" if gate == "C05" else "pass")],
+        )
+
+    monkeypatch.setattr(hf_regression, "worker", worker)
+    monkeypatch.setattr(hf_regression, "numerical", numerical)
+    output = tmp_path / "correctness"
+    await hf_regression.run({}, output, "C00,C05,C06")
+    suite = await hf_regression.run({}, output, "C05,C06", resume=True)
+    assert calls == ["codec"] and suite["gates"]["C06"]["status"] == "pass"
+    assert any(k.endswith("/codec.json") for k in suite["gates"]["C05"]["artifacts"])

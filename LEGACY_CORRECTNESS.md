@@ -101,7 +101,7 @@ source closure, numerical settings and hashes. Candidate outputs are never golde
 
 ```bash
 # Result location is independent of the checkout/worktree working directory.
-MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
+MOSS_BENCHMARK_RESULTS_ROOT=../benchmark-results
 
 # CPU selection and processor; intentionally incomplete as a full-suite result
 moss-speech-bench --phase correctness --correctness-config examples/correctness.json \

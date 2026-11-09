@@ -353,9 +353,12 @@ async def run(config, output, selected=None, resume=False):
             finally:
                 suite["gates"][gate] = result
                 suite["gates"][gate]["artifacts"] = {
-                    str(p.relative_to(output)): file_hash(p)
-                    for p in folder.rglob("*")
-                    if p.is_file()
+                    **(previous.get("artifacts", {}) if gate in ("C01", "C05") else {}),
+                    **{
+                        str(p.relative_to(output)): file_hash(p)
+                        for p in folder.rglob("*")
+                        if p.is_file()
+                    },
                 }
                 states = [v["status"] for v in suite["gates"].values()]
                 suite["status"] = (
