@@ -13,7 +13,9 @@ import time
 from pathlib import Path
 
 import numpy as np
+import onnxruntime
 import torch
+import torchaudio
 from safetensors.torch import load_file, save_file
 from sglang.srt.arg_groups.model_override_base import resolved_view
 from sglang_omni.models.moss_speech.codec import MossSpeechCodec
@@ -254,6 +256,10 @@ def main():
         status="complete",
         origins=origins,
         torch=torch.__version__,
+        torchaudio=torchaudio.__version__,
+        onnxruntime=onnxruntime.__version__,
+        transformers=importlib.metadata.version("transformers"),
+        flashinfer=importlib.metadata.version("flashinfer-python"),
         sglang=importlib.metadata.version("sglang"),
         adapter="sglang-native-moss-v1",
         adapter_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

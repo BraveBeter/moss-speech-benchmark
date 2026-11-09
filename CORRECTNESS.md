@@ -45,9 +45,19 @@ moss-speech-bench --phase hf-reference \
   --output-dir benchmark-results/hf-reference
 ```
 
-Each reference contains AR grids/full logits/greedy rows, Codec features/PCM, source/runtime metadata, the exporter snapshot and SHA256 file ledger. The HF process asserts that it imported no candidate or SGLang module. Checkpoint paths may move; stable asset IDs and their hashes, inputs, system, seed, decoder vectors and numerical policy must remain identical. A different candidate SHA or attention backend does not redefine the HF oracle.
+Each reference contains AR grids/full logits/greedy rows, Codec features/PCM, source/runtime metadata, the exporter snapshot and SHA256 file ledger. The HF process asserts that it imported no candidate or SGLang module. Checkpoint paths may move; stable asset IDs and their hashes, inputs, system, seed, decoder vectors and numerical policy must remain identical. A different candidate SHA or candidate attention backend does not redefine the HF oracle.
 
 Use a new reference directory for a new binding. Failed exports and partial worker logs are retained; they are not admitted as references. Reference export alone does not qualify a candidate.
+
+## Optional HF FlashInfer reference
+
+The default HF backend remains SDPA. An explicitly authorized comparison can set `reference_attention_backend: "flashinfer"` in the correctness specification and export a separate reference directory. The field is part of the immutable oracle binding; this reference cannot be substituted for an existing SDPA reference. Existing references without the field retain their original binding and files.
+
+The FlashInfer hook uses the official HF [attention registry and matching mask registry](https://huggingface.co/docs/transformers/attention_interface). Official model source files, projections, normalization, RoPE, DynamicCache and generation remain intact. The hook independently invokes FlashInfer's FA2 ragged-prefill and paged-decode wrappers, using NHD, page size one and tensor-core decode. It imports no SGLang or candidate code. It qualifies unpadded BF16 B1 HF reference requests, whose frozen traces are compared with candidate B1/B2/B4 execution; it does not implement general HF batch scheduling.
+
+The hook validates the full bottom-right causal mask and rejects unsupported padding, batch shapes, sliding windows, training and dropout. There is no SDPA fallback. Reference metadata records the FlashInfer version, actual prefill/decode call counts and a hashed hook snapshot. C00 verifies the snapshot and both observed paths. AR comparisons require the same Torch and FlashInfer versions; Codec comparisons require matching Torch, Torchaudio and ONNX Runtime versions. The existing numerical thresholds, full-vocabulary/raw-top1 checks and exact greedy checks remain unchanged.
+
+A pass under this binding establishes HF+FlashInfer equivalence for the recorded candidate, configuration and cases. Keep the original SDPA comparison available with its actual status. An observed implementation failure, required mismatch or incomplete gate still blocks formal Quick and release.
 
 ## Correctness, performance and offline quality
 

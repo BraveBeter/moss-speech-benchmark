@@ -64,6 +64,13 @@ def load_config(path):
         raise ValueError("Asset identities must be nonempty and unique")
     if config.get("protocol") != PROTOCOL or config.get("adapter") != "sglang-native-moss-v1":
         raise ValueError("Unknown HF regression protocol/backend adapter")
+    if config.get("reference_attention_backend", "sdpa") not in ("sdpa", "flashinfer"):
+        raise ValueError("Independent HF reference attention must be sdpa or flashinfer")
+    if (
+        config.get("reference_attention_backend") == "flashinfer"
+        and config["runtime"]["attention_backend"] != "flashinfer"
+    ):
+        raise ValueError("HF FlashInfer qualification requires the declared SG FlashInfer path")
     if not re.fullmatch("[a-f0-9]{40}", config["core_sha"]):
         raise ValueError("Candidate requires a full commit SHA")
     if config.get("tolerances") != {
@@ -119,7 +126,7 @@ def load_config(path):
 
 
 def oracle_binding(config):
-    return {
+    binding = {
         name: config[name]
         for name in (
             "protocol",
@@ -136,6 +143,23 @@ def oracle_binding(config):
         "system": config["service"]["system"],
         "assets": {a["id"]: a["sha256"] for a in config["assets"]},
     }
+    if "reference_attention_backend" in config:
+        binding["reference_attention_backend"] = config["reference_attention_backend"]
+    return binding
+
+
+def reference_files(config):
+    files = [
+        "ar.json",
+        "ar.safetensors",
+        "codec.json",
+        "codec.safetensors",
+        "execution/hf_oracle.py",
+        "execution/noise_tape.py",
+    ]
+    if config.get("reference_attention_backend") == "flashinfer":
+        files.append("execution/hf_flashinfer.py")
+    return files
 
 
 def deployment_binding(config):
@@ -193,14 +217,7 @@ def reference(config):
     assert manifest["protocol"] == PROTOCOL and manifest["binding"] == oracle_binding(config), (
         "HF reference contract changed"
     )
-    assert set(manifest["files"]) == {
-        "ar.json",
-        "ar.safetensors",
-        "codec.json",
-        "codec.safetensors",
-        "execution/hf_oracle.py",
-        "execution/noise_tape.py",
-    }
+    assert set(manifest["files"]) == set(reference_files(config))
     for name, expected in manifest["files"].items():
         assert file_hash(path.parent / name) == expected, "HF reference artifact changed: " + name
     for phase in ("ar", "codec"):
@@ -208,6 +225,16 @@ def reference(config):
         assert report["status"] == "complete" and report["serving_modules_imported"] == []
         assert report["exporter_sha256"] == manifest["files"]["execution/hf_oracle.py"]
         assert report["noise_helper_sha256"] == manifest["files"]["execution/noise_tape.py"]
+        if phase == "ar":
+            assert report["attention"] == config.get("reference_attention_backend", "sdpa")
+            if report["attention"] == "flashinfer":
+                assert (
+                    report["attention_adapter_sha256"]
+                    == manifest["files"]["execution/hf_flashinfer.py"]
+                )
+                calls = report["flashinfer"]["calls"]
+                assert any(k.startswith("prefill/") and n > 0 for k, n in calls.items())
+                assert any(k.startswith("decode/") and n > 0 for k, n in calls.items())
     return path.parent
 
 

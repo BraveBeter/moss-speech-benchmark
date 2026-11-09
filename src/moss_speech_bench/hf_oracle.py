@@ -28,6 +28,13 @@ def seed(value):
 
 @torch.inference_mode()
 def ar(config, output):
+    attention = config.get("reference_attention_backend", "sdpa")
+    flashinfer_attention = None
+    if attention == "flashinfer":
+        from moss_speech_bench.hf_flashinfer import FlashInferAttention
+
+        flashinfer_attention = FlashInferAttention(torch.device("cuda:0"))
+        flashinfer_attention.register()
     tokenizer = AutoTokenizer.from_pretrained(
         config["model_path"], trust_remote_code=True, local_files_only=True
     )
@@ -42,7 +49,7 @@ def ar(config, output):
             trust_remote_code=True,
             local_files_only=True,
             torch_dtype=torch.bfloat16,
-            attn_implementation="sdpa",
+            attn_implementation=attention,
         )
         .to("cuda:0")
         .eval()
@@ -117,7 +124,15 @@ def ar(config, output):
         )
         cases[-1]["greedy_rows"] = generated[0].cpu().tolist()
     save_file(tensors, str(output / "ar.safetensors"))
-    return dict(cases=cases, model_class=type(model).__name__, attention="sdpa", dtype="bfloat16")
+    result = dict(
+        cases=cases, model_class=type(model).__name__, attention=attention, dtype="bfloat16"
+    )
+    if flashinfer_attention is not None:
+        result["flashinfer"] = flashinfer_attention.report()
+        result["attention_adapter_sha256"] = hashlib.sha256(
+            Path(inspect.getfile(type(flashinfer_attention))).read_bytes()
+        ).hexdigest()
+    return result
 
 
 @torch.inference_mode()
@@ -194,6 +209,7 @@ def main():
         python=sys.version,
         torch=torch.__version__,
         transformers=importlib.metadata.version("transformers"),
+        torchaudio=torchaudio.__version__,
         gpu=dict(
             name=torch.cuda.get_device_name(0),
             capability=list(torch.cuda.get_device_capability(0)),
@@ -204,6 +220,10 @@ def main():
             Path(inspect.getfile(NoiseTape)).read_bytes()
         ).hexdigest(),
     )
+    if args.phase == "codec":
+        import onnxruntime
+
+        result["onnxruntime"] = onnxruntime.__version__
     (args.output / (args.phase + ".json")).write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n"
     )

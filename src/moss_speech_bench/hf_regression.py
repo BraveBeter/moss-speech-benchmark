@@ -19,6 +19,7 @@ from .hf_contract import (
     oracle_binding,
     preflight,
     reference,
+    reference_files,
     validate_assets,
 )
 from .providers.allocation import local_devices
@@ -144,6 +145,11 @@ def numerical(gate, config, root, candidate):
     if gate in ("C01", "C02", "C03", "C04"):
         report = read_json(candidate / "ar.json")
         expected = read_json(bundle / "ar.json")
+        if config.get("reference_attention_backend") == "flashinfer":
+            assert report["torch"] == expected["torch"], "HF/SG Torch runtime differs"
+            assert report["flashinfer"] == expected["flashinfer"]["version"], (
+                "HF/SG FlashInfer runtime differs"
+            )
         by_id = {case["id"]: case for case in expected["cases"]}
         assert set(by_id) == {c["id"] for c in config["cases"]}
         if gate == "C01":
@@ -215,6 +221,11 @@ def numerical(gate, config, root, candidate):
                     == config["runtime"]["disable_cuda_graph"]
                 )
     else:
+        if config.get("reference_attention_backend") == "flashinfer":
+            report = read_json(candidate / "codec.json")
+            expected_report = read_json(bundle / "codec.json")
+            for name in ("torch", "torchaudio", "onnxruntime"):
+                assert report[name] == expected_report[name], "HF/SG Codec runtime differs: " + name
         actual = load_file(candidate / "codec.safetensors")
         expected = load_file(bundle / "codec.safetensors")
         keys = (
@@ -246,17 +257,9 @@ async def export_reference(path, output):
             shutil.copyfile(folder / (phase + suffix), output / (phase + suffix))
     shutil.copyfile(MODULE / "hf_oracle.py", output / "execution/hf_oracle.py")
     shutil.copyfile(MODULE / "noise_tape.py", output / "execution/noise_tape.py")
-    files = {
-        name: file_hash(output / name)
-        for name in (
-            "ar.json",
-            "ar.safetensors",
-            "codec.json",
-            "codec.safetensors",
-            "execution/hf_oracle.py",
-            "execution/noise_tape.py",
-        )
-    }
+    if config.get("reference_attention_backend") == "flashinfer":
+        shutil.copyfile(MODULE / "hf_flashinfer.py", output / "execution/hf_flashinfer.py")
+    files = {name: file_hash(output / name) for name in reference_files(config)}
     result = dict(
         protocol=PROTOCOL,
         status="complete",
@@ -274,7 +277,9 @@ async def export_reference(path, output):
         + "\n\n"
         + "Protocol: `"
         + PROTOCOL
-        + "`. Local official HF sources, SDPA/BF16 AR and FP32 Codec; no candidate imports. Frozen data is reusable only with the identical asset/input/policy binding.\n\n## 正确性测试\n\nReference export complete; this does not qualify a candidate.\n\n| 检查项 | 通过/全部 | 状态 |\n|---|---:|---|\n\n## 性能测试\n\nNot executed.\n\n| 数据集 | 指标 | 结果 |\n|---|---|---|\n\n## 质量测试\n\nNot executed.\n\n| 数据集 | 指标 | 结果 |\n|---|---|---|\n"
+        + "`. Local official HF sources, "
+        + config.get("reference_attention_backend", "sdpa")
+        + "/BF16 AR and FP32 Codec; no candidate imports. Frozen data is reusable only with the identical asset/input/policy binding.\n\n## 正确性测试\n\nReference export complete; this does not qualify a candidate.\n\n| 检查项 | 通过/全部 | 状态 |\n|---|---:|---|\n\n## 性能测试\n\nNot executed.\n\n| 数据集 | 指标 | 结果 |\n|---|---|---|\n\n## 质量测试\n\nNot executed.\n\n| 数据集 | 指标 | 结果 |\n|---|---|---|\n"
     )
     return result
 

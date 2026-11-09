@@ -19,7 +19,12 @@ from test_runner import args
 from moss_speech_bench.cli import run
 from moss_speech_bench.client import ChatClient
 from moss_speech_bench.datasets import DEMO_AUDIO_SYSTEM, load_workload
-from moss_speech_bench.hf_contract import deployment_binding, load_config, oracle_binding
+from moss_speech_bench.hf_contract import (
+    deployment_binding,
+    load_config,
+    oracle_binding,
+    reference_files,
+)
 from moss_speech_bench.hf_regression import compare
 from moss_speech_bench.quality import evaluate
 from moss_speech_bench.reporting import summarize
@@ -246,6 +251,43 @@ def test_reference_binding_is_independent_of_candidate_but_pins_inputs_and_polic
         changed = copy.deepcopy(config)
         changed[field] = []
         assert oracle_binding(changed) != original
+
+
+def test_flashinfer_reference_binding_keeps_the_sdpa_oracle_distinct(tmp_path):
+    config = regression_config(tmp_path)
+    original = oracle_binding(config)
+    assert "reference_attention_backend" not in original
+    assert "execution/hf_flashinfer.py" not in reference_files(config)
+    config["reference_attention_backend"] = "flashinfer"
+    assert oracle_binding(config) != original
+    assert oracle_binding(config)["reference_attention_backend"] == "flashinfer"
+    assert "execution/hf_flashinfer.py" in reference_files(config)
+    assert config["tolerances"] == {
+        "logits_atol": 0.25,
+        "logits_rtol": 0.02,
+        "codec_atol": 1e-5,
+        "codec_rtol": 1e-5,
+    }
+
+
+@pytest.mark.parametrize("backend", ["eager", "unknown"])
+def test_reference_rejects_unqualified_attention_backend(tmp_path, backend):
+    config = regression_config(tmp_path)
+    config["reference_attention_backend"] = backend
+    path = tmp_path / "config.json"
+    write_json(path, config)
+    with pytest.raises(ValueError, match="reference attention"):
+        load_config(path)
+
+
+def test_flashinfer_reference_requires_matching_sg_backend(tmp_path):
+    config = regression_config(tmp_path)
+    config["reference_attention_backend"] = "flashinfer"
+    config["runtime"]["attention_backend"] = "torch_native"
+    path = tmp_path / "config.json"
+    write_json(path, config)
+    with pytest.raises(ValueError, match="declared SG FlashInfer"):
+        load_config(path)
 
 
 async def test_worker_cancellation_terminates_owned_process(tmp_path):

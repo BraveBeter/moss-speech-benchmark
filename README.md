@@ -48,6 +48,8 @@ Quick、Daily、Full的真实infer都必须提供 [HF正确性配置](examples/h
 
 新运行使用[独立HF精度回归协议](CORRECTNESS.md)：客户端持有输入、数值断言和HTTP协议检查，候选仅通过版本化生产API适配器接入，不调用候选pytest或依赖其测试目录。独立HF进程导出可复用的固定参考，逐词表prefill/cached decode、greedy、Encoder和Decoder分别比较。候选按完整SHA绑定，Git祖先和性能基线不是正确性标准。没有protocol字段的旧配置继续走[历史兼容协议](LEGACY_CORRECTNESS.md)，已有报告不改写或套用新证明。
 
+HF参考默认使用SDPA。经明确授权的同后端比较可配置 `reference_attention_backend: "flashinfer"`，通过官方HF attention/mask注册接口接入独立FlashInfer计算，另建并冻结参考目录；后端纳入绑定，原SDPA参考保留。完整词表、top1、greedy及Codec阈值不变，并核对Torch/FlashInfer及Codec运行库版本，见[HF FlashInfer参考约束](CORRECTNESS.md#optional-hf-flashinfer-reference)。
+
 可以由外层在启动服务前，通过同一运行目录的`correctness/`执行C00–C06；服务就绪后，infer会校验其源码/资产/配置身份，完成C07/C08。只复用同目录内且身份、产物hash有效的已通过gate，失败不自动重试。独立完整运行也保留：
 
 ```bash
