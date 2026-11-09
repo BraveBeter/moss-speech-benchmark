@@ -26,6 +26,8 @@ C05 compares the actual reference-voice frontend. Integer prompt codes are seria
 
 Graph evidence observes SGLang's real decode executor and active request count. A replay of a padded graph is not evidence that its padded capacity was the active batch. HTTP overlap is not engine-batch evidence. Probe instrumentation is absent from timed service inference. Runtime settings must describe the actual deployment; no eager or alternate-attention fallback is used to manufacture coverage.
 
+A numerical failure alone does not attribute the cause to the model adapter. Torch/CUDA, ONNX Runtime and attention-kernel changes can alter these vectors, greedy rows or PCM; the v1 binding does not require candidate and HF library versions to match. Record actual module versions, including ONNX Runtime when both sessions use the CPU provider, and isolate each factor with separate same-stack controls. Preserve the original oracle and failed certificate. A changed reference, backend or injected frontend is a diagnostic configuration, not a retroactive pass or a tolerance adjustment.
+
 These checks qualify the declared cases, compute path and API. C08 does not prove immediate server KV reclamation or internal cancellation acknowledgement, and a buffered WAV API does not reveal completion-token usage or natural termination. Unreported fields remain unknown.
 
 ## Prepare and freeze the independent reference
