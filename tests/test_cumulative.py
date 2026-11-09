@@ -305,7 +305,8 @@ def test_distinct_parameterizations_of_one_factory_keep_every_fixed_case(reverse
     assert len(nodes) == len(set(nodes))
 
 
-def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path):
+@pytest.mark.parametrize("precision", ["ffn", "ffn_attention_sdpa"])
+def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path, precision):
     changes = dict(
         optimizations=[
             "ar-decode-graph",
@@ -320,16 +321,23 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
             decode_graph=True,
             decode_graph_serial_batch=True,
             broadcast_attention_bias=True,
-            flow_precision="ffn",
+            flow_precision=precision,
         ),
-        run_vocoder=dict(broadcast_attention_bias=True, flow_precision="ffn"),
+        run_vocoder=dict(broadcast_attention_bias=True, flow_precision=precision),
     )
+    if precision == "ffn_attention_sdpa":
+        changes["optimizations"].append("codec-sdpa-bf16")
     load_suite(configuration(tmp_path, **changes))
     for patch in [
         dict(precision_contract=None),
         dict(precision_contract="unknown"),
         dict(run_vocoder=dict(broadcast_attention_bias=True)),
         dict(optimizations=changes["optimizations"] + ["codec-cfm-graph"]),
+        dict(
+            optimizations=[
+                feature for feature in changes["optimizations"] if feature != "codec-flow-bf16"
+            ]
+        ),
     ]:
         with pytest.raises(ValueError):
             load_suite(configuration(tmp_path, **(changes | patch)))
@@ -337,8 +345,11 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
         load_suite(configuration(tmp_path, run_vocoder=dict(flow_precision="ffn")))
 
 
-def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass():
+@pytest.mark.parametrize("sdpa", [False, True])
+def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa):
     selected = ["codec-bias-broadcast", "codec-unready-return", "codec-flow-bf16"]
+    if sdpa:
+        selected.append("codec-sdpa-bf16")
     reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
     report = dict(
         optimizations=selected,
@@ -354,6 +365,7 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass():
         rng_isolation_exact=True,
         cleanup_exact=True,
         executions={feature: 1 for feature in selected},
+        bf16_sdpa_mask_broadcast=sdpa,
     )
     validate_codec_qualification(report, selected, reference, "e13-bf16-approx-v1")
     with pytest.raises(AssertionError):
@@ -366,3 +378,12 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass():
     ]:
         with pytest.raises(AssertionError):
             validate_codec_qualification(report | patch, selected, reference, "e13-bf16-approx-v1")
+    if sdpa:
+        for patch in (
+            dict(bf16_sdpa_mask_broadcast=False),
+            dict(executions=report["executions"] | {"codec-sdpa-bf16": 0}),
+        ):
+            with pytest.raises(AssertionError):
+                validate_codec_qualification(
+                    report | patch, selected, reference, "e13-bf16-approx-v1"
+                )

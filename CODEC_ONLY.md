@@ -14,7 +14,7 @@ The transcript belongs to the actual target recording and the speaker prompt bel
 
 ## Inference
 
-Start from `examples/codec-only.json`, replacing paths and hashes. Select `hf-native`, `sg-fp32` or `sg-bf16`. SG requires `model_root` and a complete clean `model_sha`; BF16 additionally requires `flow_precision: "ffn_attention"`. HF requires its original CosyVoice/Matcha dependency source tree as `hf_source_root`. Explicitly select the model interpreter and an authorized physical GPU. Pin all Codec weight/config/source assets.
+Start from `examples/codec-only.json`, replacing paths and hashes. Select `hf-native`, `sg-fp32` or `sg-bf16`. SG requires `model_root` and a complete clean `model_sha`; BF16 additionally requires `flow_precision: "ffn_attention"` (M1) or `"ffn_attention_sdpa"` (M2). HF requires its original CosyVoice/Matcha dependency source tree as `hf_source_root`. Explicitly select the model interpreter and an authorized physical GPU. Pin all Codec weight/config/source assets.
 
 ```bash
 python -m moss_speech_bench --phase codec-infer --config hf.json --output-dir results/hf
@@ -47,3 +47,5 @@ python -m moss_speech_bench --phase codec-report --config comparison.json --outp
 ```
 
 Comparison requires identical corpus, Codec assets, seed and decode mode, and verifies target/prompt Encoder codes match. It retains absolute WER/CER/SIM, actual denominators and failures for each backend. A subset is a regression screen, not a full reproduction of paper numbers. Codec quality does not replace C00–C08, HTTP Quick or end-to-end latency tests.
+
+M2 additionally records positive BF16 SDPA execution counts and requires zero-stride head bias broadcasting without fallback. Its existing FP32 solver, noise and HiFT remain unchanged. These offline results do not establish streaming reconstruction quality.

@@ -55,6 +55,21 @@ def test_codec_pairs_use_actual_target_text_and_each_reference(tmp_path):
         codec.load_config(path)
 
 
+@pytest.mark.parametrize("precision", ["ffn_attention", "ffn_attention_sdpa"])
+def test_codec_bf16_profiles_require_explicit_clean_source(tmp_path, monkeypatch, precision):
+    path, _ = configuration(tmp_path)
+    spec = read_json(path) | dict(
+        backend="sg-bf16", flow_precision=precision, model_root=str(tmp_path), model_sha="a" * 40
+    )
+    write_json(path, spec)
+    monkeypatch.setattr(codec, "git_identity", lambda _: dict(commit="a" * 40, dirty=False))
+    loaded, _, _ = codec.load_config(path)
+    assert loaded["flow_precision"] == precision
+    monkeypatch.setattr(codec, "git_identity", lambda _: dict(commit="a" * 40, dirty=True))
+    with pytest.raises(ValueError, match="pinned clean SHA"):
+        codec.load_config(path)
+
+
 @pytest.mark.parametrize(
     "change",
     [

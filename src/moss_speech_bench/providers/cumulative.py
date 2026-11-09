@@ -33,6 +33,7 @@ FEATURES = tuple(
             *MICRO_SUITES,
             "codec-cfm-graph",
             "codec-flow-bf16",
+            "codec-sdpa-bf16",
             "codec-score-release",
             "direct-lt",
             "context-startup-schedule",
@@ -42,6 +43,7 @@ FEATURES = tuple(
 COMPUTE_AR_FEATURES = (*AR_FEATURES, "ar-serial-decode-graph", "ar-batched-rope")
 STREAMING_CODEC_FEATURES = (
     "codec-flow-bf16",
+    "codec-sdpa-bf16",
     "codec-bias-broadcast",
     "codec-cfm-graph",
     "direct-lt",
@@ -81,6 +83,8 @@ def validate_codec_qualification(report, selected, reference, precision_contract
     assert report["cleanup_exact"] is True
     for feature in expected:
         assert type(report["executions"][feature]) is int and report["executions"][feature] > 0
+    if "codec-sdpa-bf16" in expected:
+        assert report["bf16_sdpa_mask_broadcast"] is True
 
 
 def validate_ar_qualification(report, selected):
@@ -176,7 +180,7 @@ def validate(config):
     if "codec-flow-bf16" in selected:
         if (
             config.get("precision_contract") != "e13-bf16-approx-v1"
-            or precision not in ("ffn", "attention", "ffn_attention")
+            or precision not in ("ffn", "attention", "ffn_attention", "ffn_attention_sdpa")
             or config.get("run_vocoder", {}).get("flow_precision") != precision
             or "codec-cfm-graph" in selected
             or not {"codec-bias-broadcast", "codec-unready-return"} <= set(selected)
@@ -188,6 +192,8 @@ def validate(config):
         or config.get("precision_contract") is not None
     ):
         raise ValueError("Undeclared BF16 Flow precision")
+    if ("codec-sdpa-bf16" in selected) != (precision == "ffn_attention_sdpa"):
+        raise ValueError("BF16 SDPA requires its explicit activation and regression coverage")
     schedule = deployment.get("stream_startup_schedule")
     if "context-startup-schedule" in selected:
         if schedule != "6_8_align25" or "context-small-first" in selected:

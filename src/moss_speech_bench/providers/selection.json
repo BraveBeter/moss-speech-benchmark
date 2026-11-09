@@ -1054,5 +1054,16 @@
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn]",
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn_attention]"
   ],
-  "C03-codec-flow-bf16": []
+  "C03-codec-flow-bf16": [],
+  "C01-codec-sdpa-bf16": [
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_requires_live_bias_and_full_projection_stage",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_flow_rejects_unqualified_fp32_graph_combination[ffn_attention_sdpa]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn_attention_sdpa]"
+  ],
+  "C03-codec-sdpa-bf16": [
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[17]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[65]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[1500]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_sdpa_preserves_live_mask_and_fp32_boundary[1512]"
+  ]
 }
