@@ -16,7 +16,7 @@ Full 的 Decoder 流程尚未确定：只登记目标集合和暂缓原因，不
 
 Seed-TTS-Eval仅预留给隔离的Codec Decoder评估。当前拒绝 `kind=seedtts` 的新聊天运行。StoryCloze及其他AR/Encoder数据不属于当前三个常规模式。旧数据集loader/protocol和原WER/CER结果的历史来源保留在Git及旧报告中，不将旧高错误率作为标准Decoder质量结论。
 
-`--tasks s2s`或`--tasks s2t`可显式只测一条路径，默认两者。`--mode quickly`是`quick`别名，归档统一写quick。`custom`保留为显式开发/协议诊断入口，不代替常规模式验收。
+四种输入输出可用 `--tasks t2s`、`--tasks s2s`、`--tasks t2t`、`--tasks s2t` 分别选择，也可逗号组合；必须在 `service.tasks` 声明支持范围。无能力声明的旧配置默认 S2T/S2S。`--mode quickly`是`quick`别名，归档统一写quick。`custom`保留为显式开发/协议诊断入口，不代替常规模式验收。
 
 ## 安装与数据
 
@@ -138,18 +138,7 @@ python -m build
 
 全部本地结果从`$MOSS_BENCHMARK_RESULTS_ROOT/README.md`查看，各run只打开其`summary.md`；运行目录不纳入客户端Git。历史脚本/绝对路径保留执行时身份，迁移后的当前位置以结果索引及迁移清单为准。
 
-Named speech-QA workload JSON may set `task_prompts` to customize one task. S2T keeps the native text-output prefix before these instructions; S2S and selected question IDs stay unchanged:
-
-```json
-"task_prompts": {
-  "s2t": {
-    "name": "spoken-qa-explicit-text-en-v1",
-    "system": "You are a helpful assistant. Respond with text outputs.\nAnswer the spoken question in English using only a short answer phrase. Do not repeat the question or add explanations."
-  }
-}
-```
-
-Each task prompt takes precedence over the dataset prompt. Named S2T preserves the native text prefix; `custom` diagnostics retain their explicitly configured raw prompts. The effective prompt and payload hashes enter the measurement contract. The S2T request repair was introduced in v3; current v4 also requires mandatory warmups and three-repeat averaging. Use fresh v4 outputs and baselines; historical v2/v3 results are preserved. Empty-output failure rules remain unchanged.
+命名套件按输出模态使用官方默认 System，不接受附加短答案、复述或模板指令；`task_prompts` 仅允许重申同一官方 System。自定义提示词实验使用独立 `custom` 运行，不能与正式基线混比。
 
 ## Custom mixed-output measurements
 
@@ -158,9 +147,31 @@ A custom JSON dataset may use `"task": "mixed"`; every row must then declare exa
 For new eager-base qualification, set `context_remaining: true` in the correctness config and select the appropriate compute profile described in [CORRECTNESS.md](CORRECTNESS.md). This flag composes with Graph, mixed-admission and native-norm profiles; it does not replace their mandatory specialized checks.
 
 
-AR optimization combinations use the explicit `ar-combination` correctness profile. Declare every enabled strategy, qualify its actual CUDA path and preserve independent HF comparisons; complete C00–C08 before Quick, then audit actual serving activation after all matched workloads. See [the combination contract](CORRECTNESS.md#explicit-ar-combinations) for fields and the final audit command.
+AR optimization combinations use the explicit `ar-combination` correctness profile. Declare every enabled strategy, qualify its actual CUDA path and preserve independent HF comparisons; complete C00–C08 before Quick, then audit actual serving activation after all matched workloads. See [the legacy combination contract](LEGACY_CORRECTNESS.md#explicit-ar-combinations) for fields and the final audit command.
 
 ## 按服务能力选择输入输出
+
+四种模式可独立评测，配置示例见 [multimodal-qa.json](examples/multimodal-qa.json)。这是客户端四模态接口示例；只声明被测服务实际已经实现的模式。当前 remove-repeat-prefix 分支仍使用 [spoken-response.json](examples/spoken-response.json) 的 T2S 能力，客户端不会隐式扩充模型接口。
+
+| 输入→输出 | CLI 选择 | 问答质量评分 |
+|---|---|---|
+| 文本→语音 | `--tasks t2s` | 冻结 WAV → ASR → 语义 Judge，另列 UTMOS |
+| 语音→语音 | `--tasks s2s` | 冻结 WAV → ASR → 语义 Judge，另列 UTMOS |
+| 文本→文本 | `--tasks t2t` | 冻结回答文本 → 语义 Judge |
+| 语音→文本 | `--tasks s2t` | 冻结回答文本 → 语义 Judge |
+
+```bash
+# 先修改示例中的相对数据路径及 service.tasks，声明实际服务能力。
+# 每种模式使用独立 run_id；正确性证书必须覆盖本次选择的模式。
+moss-speech-bench --mode quick --config benchmark-client/examples/multimodal-qa.json \
+  --tasks t2t --model moss-speech --base-url http://127.0.0.1:8000 \
+  --deployment deployment.local.json --correctness-config correctness.local.json \
+  --output-dir benchmark-results/candidate-t2t-quick
+```
+
+将 `--tasks` 换为其他一项即可分别评测；`--tasks t2s,s2s,t2t,s2t` 在同一运行中建立各自的数据集/任务 cells，不混合指标。四条路径共享稳定问题 ID，文本输入读取题面，语音输入读取对应原始音频；参考答案只进入离线评分。Quick 单路径为 180 正式+36预热，四路径为720正式+144预热。
+
+新 HF 正确性适配器当前只覆盖 T2S，其他模式需要相应 HF 输入处理、AR/Codec 和协议断言后才能正式放行；能力声明不等于精度证书。尚未实现的模式明确拒绝，不当作跳过后通过。
 
 常规三集、稳定选样、C4、三轮、每轮预热、E2E/RTF/QPS/audio-s/s和离线Judge/UTMOS口径保持。配置显式声明service.api、tasks及streaming；默认旧配置仍选S2T/S2S，扩展T2T/T2S必须声明能力，拒绝静默降级。
 
