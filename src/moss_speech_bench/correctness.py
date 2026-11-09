@@ -451,6 +451,7 @@ async def provider(gate, config, output):
         MOSS_AR_OPTIMIZATIONS=json.dumps(config.get("ar_optimizations", [])),
         MOSS_OPTIMIZATIONS=json.dumps(config.get("optimizations", [])),
         MOSS_CUMULATIVE_API=config.get("cumulative_api") or "",
+        MOSS_PRECISION_CONTRACT=config.get("precision_contract") or "",
         MOSS_VOCODER_OPTIONS=json.dumps(config.get("run_vocoder", {})),
         MOSS_CACHED_HF_REPORT=config["golden"].get("C04_cached_decode", {}).get("report", ""),
         MOSS_CACHED_HF_TENSORS=config["golden"].get("C04_cached_decode", {}).get("tensors", ""),
@@ -633,9 +634,17 @@ async def provider(gate, config, output):
                     "pre_registered_comparison_policy"
                 ]["pcm_rtol"],
             },
+            precision_contract=config.get("precision_contract"),
         )
         if len(set(features(config)) & set(cumulative.STREAMING_CODEC_FEATURES)) >= 2:
-            checks.append(dict(id="actual-cumulative-codec-hf-pcm-state", status="pass"))
+            checks.append(
+                dict(
+                    id="actual-bf16-structural-hf-offline-pcm-state"
+                    if "codec-flow-bf16" in features(config)
+                    else "actual-cumulative-codec-hf-pcm-state",
+                    status="pass",
+                )
+            )
     if gate == "C06" and "codec-bias-broadcast" in features(config):
         codec_bias_broadcast.validate_qualification(
             read_json(output / filenames[gate])["bias_broadcast"]
