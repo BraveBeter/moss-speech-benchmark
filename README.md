@@ -36,17 +36,17 @@ Quick从三个完整CSV清单选样，先核验300/1000/1000总数与全部ID唯
 
 ## 正确性先行
 
-先设置结果根的绝对路径，避免从不同checkout/worktree启动时写到别处。本节点使用：
+以下旧协议示例从工作区直属的benchmark-client目录执行，使用相对结果根；隔离worktree须显式调整相对位置，始终把结果归到工作区benchmark-results。新协议的完整流程见[CORRECTNESS.md](CORRECTNESS.md)。
 
 ```bash
-MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
+MOSS_BENCHMARK_RESULTS_ROOT=../benchmark-results
 ```
 
 其他机器仅修改该工作区配置，不把运行位置写死进客户端代码。
 
-Quick、Daily、Full的真实infer都必须提供 [correctness.json](examples/correctness.json) 的本机配置。固定C00–C08全部通过后，才发送任何正式性能请求；失败/缺项/unsupported停止后续推理，不能用 `--checks` 绕过。正确性配置的服务地址必须与受测地址一致。
+Quick、Daily、Full的真实infer都必须提供 [HF正确性配置](examples/hf-regression.json)；[旧配置](examples/correctness.json)仅用于历史兼容。固定C00–C08全部通过后，才发送任何正式性能请求；失败/缺项/unsupported停止后续推理，不能用 `--checks` 绕过。正确性配置的服务地址必须与受测地址一致。
 
-详细覆盖、独立HF golden与Slurm环境见[CORRECTNESS.md](CORRECTNESS.md)。所有模型测试和fixture仍在目标仓库；客户端通过隔离provider调用，不导入模型计算代码。正确性默认使用 `hf-reference`：候选可为任意分支/完整提交，不要求属于或继承 eager base；HF参考、输入和容差单独固定。eager base仅可作为性能对照。现有provider未覆盖的精度/kernel/graph路径会明确返回unsupported，不能通过eager回退获得通过。
+新运行使用[独立HF精度回归协议](CORRECTNESS.md)：客户端持有输入、数值断言和HTTP协议检查，候选仅通过版本化生产API适配器接入，不调用候选pytest或依赖其测试目录。独立HF进程导出可复用的固定参考，逐词表prefill/cached decode、greedy、Encoder和Decoder分别比较。候选按完整SHA绑定，Git祖先和性能基线不是正确性标准。没有protocol字段的旧配置继续走[历史兼容协议](LEGACY_CORRECTNESS.md)，已有报告不改写或套用新证明。
 
 可以由外层在启动服务前，通过同一运行目录的`correctness/`执行C00–C06；服务就绪后，infer会校验其源码/资产/配置身份，完成C07/C08。只复用同目录内且身份、产物hash有效的已通过gate，失败不自动重试。独立完整运行也保留：
 
@@ -59,7 +59,7 @@ infer保存正确性JSON的hash，score/report会重新检查九项状态及产�
 
 ## 运行
 
-以下命令在客户端checkout目录执行，输出统一使用上面的绝对结果根；从worktree启动也不改变结果位置。禁止将评测产物保存到`.audit/`或源码仓库中的`reports/`、`results/`。
+以下命令在工作区直属客户端checkout目录执行。相对结果路径以当前工作目录为准，配置中的资产则按配置文件声明的workspace_root解析。禁止将评测产物保存到`.audit/`或源码仓库中的`reports/`、`results/`。
 
 ```bash
 # 只验证数据和请求规模，不运行正确性、不请求服务
@@ -159,3 +159,11 @@ For new eager-base qualification, set `context_remaining: true` in the correctne
 
 
 AR optimization combinations use the explicit `ar-combination` correctness profile. Declare every enabled strategy, qualify its actual CUDA path and preserve independent HF comparisons; complete C00–C08 before Quick, then audit actual serving activation after all matched workloads. See [the combination contract](CORRECTNESS.md#explicit-ar-combinations) for fields and the final audit command.
+
+## 按服务能力选择输入输出
+
+常规三集、稳定选样、C4、三轮、每轮预热、E2E/RTF/QPS/audio-s/s和离线Judge/UTMOS口径保持。配置显式声明service.api、tasks及streaming；默认旧配置仍选S2T/S2S，扩展T2T/T2S必须声明能力，拒绝静默降级。
+
+当前原生MOSS适配器可用[文本到语音回答配置](examples/spoken-response.json)：T2S单路径Quick为180正式+36预热，使用--no-stream；输入直接取原题文本，答案仅用于离线判分。生成协议升级为moss-qa-v6-capabilities，新增quality_task=qa区分问答与逐字合成；旧custom TTS和历史WER/SIM保持原解释。
+
+/v1/audio/speech的WAV响应没有finish_reason和usage，客户端保留unknown而不伪造stop或零token计数；非流式TTFA/TTFT为N/A。完整HF正确性全部通过后才执行正式性能；部分输出、预算、失败和缺项均保留。

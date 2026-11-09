@@ -5,17 +5,20 @@
     "base_url": "http://127.0.0.1:8001",
     "model": "Qwen/Qwen3-ASR-1.7B",
     "concurrency": 32,
-    "path": "/path/to/local/qwen3-asr",
+    "path": "../../assets/qwen3-asr",
     "revision": "REPLACE_WITH_MODEL_COMMIT"
   },
   "utmos": {
-    "path": "/path/to/utmos.jit"
+    "path": "../../assets/utmos.jit"
   },
   "judge": {
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-4o-mini",
-    "revision": "REPLACE_WITH_PROVIDER_MODEL_VERSION",
-    "api_key_env": "OPENAI_API_KEY",
-    "timeout": 120
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "revision": "DeepSeek-V4.1-Flash-1017",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "timeout": 120,
+    "thinking": {
+      "type": "disabled"
+    }
   }
 }

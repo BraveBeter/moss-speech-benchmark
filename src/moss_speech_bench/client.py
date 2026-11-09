@@ -33,6 +33,7 @@ class Observation(RequestResult):
     audio_arrival_s: list[float] = field(default_factory=list)
     output_hashes: dict = field(default_factory=dict)
     error_type: str | None = None
+    endpoint: str = "/v1/chat/completions"
 
 
 async def sse_events(response):
@@ -71,6 +72,7 @@ def decode_wav(data):
 
 class ChatClient:
     def __init__(self, url, output_dir, *, sample_rate=24000, api_key=None):
+        self.origin = url.rstrip("/")
         self.url = url.rstrip("/") + "/v1/chat/completions"
         self.directory = Path(output_dir)
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -79,6 +81,12 @@ class ChatClient:
 
     async def send(self, session: aiohttp.ClientSession, sample: dict) -> Observation:
         payload = sample["payload"]
+        endpoint = sample.get("endpoint", "/v1/chat/completions")
+        if endpoint not in ("/v1/chat/completions", "/v1/audio/speech"):
+            raise ValueError("Unsupported generation endpoint")
+        speech = endpoint == "/v1/audio/speech"
+        if speech and (payload.get("stream") or sample["task"] != "t2s"):
+            raise ValueError("Speech endpoint requires non-streaming t2s")
         key = digest(sample["id"])[:24]
         result = Observation(
             request_id=key,
@@ -86,6 +94,7 @@ class ChatClient:
             task=sample["task"],
             language=sample["language"],
             payload_hash=digest(payload),
+            endpoint=endpoint,
         )
         events, pcm_parts = [], []
         rate, channels = self.sample_rate, 1
@@ -93,13 +102,30 @@ class ChatClient:
         result.started_s = started
         cancelled = False
         try:
-            async with session.post(self.url, json=payload, headers=self.headers) as response:
+            async with session.post(
+                self.origin + endpoint, json=payload, headers=self.headers
+            ) as response:
                 result.http_status = response.status
                 if response.status != 200:
                     body = await response.text()
                     events.append({"t_s": time.perf_counter() - started, "body": body})
                     raise ValueError(f"HTTP {response.status}: {body[:500]}")
-                if payload["stream"]:
+                if speech:
+                    raw = await response.read()
+                    result.ended_s = time.perf_counter()
+                    pcm, rate, channels = decode_wav(raw)
+                    if rate != self.sample_rate or channels != 1:
+                        raise ValueError("Speech response must match the declared mono sample rate")
+                    pcm_parts.append(pcm)
+                    events.append(
+                        dict(
+                            t_s=result.ended_s - started,
+                            response_sha256=hashlib.sha256(raw).hexdigest(),
+                            content_type=response.headers.get("Content-Type"),
+                            bytes=len(raw),
+                        )
+                    )
+                elif payload["stream"]:
                     if "text/event-stream" not in response.headers.get("Content-Type", ""):
                         raise ValueError("Expected text/event-stream")
                     done = False
@@ -164,7 +190,7 @@ class ChatClient:
                         pcm_parts.append(pcm)
                 result.ended_s = result.ended_s or time.perf_counter()
             pcm = b"".join(pcm_parts)
-            if result.finish_reason not in ("stop", "length"):
+            if not speech and result.finish_reason not in ("stop", "length"):
                 raise ValueError(f"Unsuccessful finish: {result.finish_reason!r}")
             if sample["task"].endswith("s") and not pcm:
                 raise ValueError("Empty audio output")

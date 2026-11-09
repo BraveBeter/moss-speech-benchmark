@@ -139,9 +139,14 @@ def configuration(path):
         from urllib.parse import urlsplit
 
         spec = config["judge"]
-        allowed = {"base_url", "model", "revision", "api_key_env", "timeout"}
+        allowed = {"base_url", "model", "revision", "api_key_env", "timeout", "thinking"}
         if not isinstance(spec, dict) or set(spec) - allowed:
             raise ValueError("Judge accepts only endpoint/model/revision/key environment/timeout")
+        if "thinking" in spec and spec["thinking"] not in (
+            {"type": "disabled"},
+            {"type": "enabled"},
+        ):
+            raise ValueError("Judge thinking must explicitly be enabled or disabled")
         if any(
             not isinstance(spec.get(k), str) or not spec[k].strip()
             for k in ("base_url", "model", "revision")
@@ -193,8 +198,9 @@ def _measure(function):
 
 def evaluate(sample, row, audio, backend, config):
     task, lang = sample["task"], sample["language"]
+    qa = sample.get("quality_task") == "qa"
     metrics = ["wer" if lang == "en" else "cer", "sim"] if task == "t2s" else ["accuracy"]
-    if task == "s2s":
+    if task == "s2s" or (qa and task == "t2s"):
         metrics = ["accuracy", "utmos"]
         if config.get("qa_answer_mention", False):
             metrics.append("answer_mention")
@@ -269,7 +275,7 @@ def evaluate(sample, row, audio, backend, config):
             def accuracy():
                 if sample.get("expected") is None:
                     raise ValueError("Missing reference answer")
-                if task == "t2t":
+                if task == "t2t" and not qa:
                     expected = str(sample["expected"]).strip().upper()
                     predicted = extract_answer_letter(row["text"])
                     valid = predicted is not None and predicted < len(config.get("choices", "AB"))
@@ -416,6 +422,12 @@ def score(directory, config_path=None, time_budget=None):
         by_id = {r["sample_id"]: r for r in rows}
         records, record_entries = [], []
         for sample in inputs:
+            sample = dict(
+                sample,
+                source_dataset=manifest["contract"]["datasets"][cell["dataset"]].get(
+                    "source_dataset", cell["dataset"]
+                ),
+            )
             file = cache / (digest(sample["id"]) + ".json")
             if file.exists():
                 record = read_json(file)

@@ -40,6 +40,8 @@ def parser():
             "codec-infer",
             "codec-score",
             "codec-report",
+            "hf-reference",
+            "hf-prepare",
         ),
         default="infer",
     )
@@ -108,6 +110,20 @@ def check_fresh_output(root, mode):
 
 
 async def run(args):
+    if args.phase == "hf-prepare":
+        from .hf_regression import prepare_config
+
+        if not args.config or args.resume or args.dry_run:
+            raise ValueError("hf-prepare requires a local specification and a fresh directory")
+        result = await asyncio.to_thread(prepare_config, args.config, args.output_dir)
+        return {"preparation": {"failed": result["status"] != "complete"}}
+    if args.phase == "hf-reference":
+        from .hf_regression import export_reference
+
+        if not args.correctness_config or args.resume or args.dry_run:
+            raise ValueError("hf-reference requires a config and a fresh real export")
+        result = await export_reference(args.correctness_config, args.output_dir)
+        return {"reference": {"failed": result["status"] != "complete"}}
     if args.phase.startswith("codec-"):
         from .codec import compare, infer, render, score
 
@@ -269,6 +285,27 @@ async def run(args):
         from .correctness import load_suite, run_correctness
 
         check_config = load_suite(args.correctness_config)
+        if check_config.get("protocol") == "hf-regression-v1":
+            from .hf_contract import deployment_binding
+            from .service import service_config
+
+            if (
+                not deployment
+                or deployment.get("hf_regression") != deployment_binding(check_config)
+                or deployment.get("server", {}).get("commit") != check_config["core_sha"]
+                or deployment.get("server", {}).get("dirty") is not False
+            ):
+                raise ValueError("Deployment identity/assets/runtime differ from HF correctness")
+            declared = service_config(
+                check_config["service"], check_config["workspace_root"], args.stream
+            )
+            for _, metadata in datasets.values():
+                actual = metadata.get("service", {})
+                if metadata["task"] not in declared["tasks"] or any(
+                    actual.get(k) != declared.get(k)
+                    for k in ("api", "system", "streaming", "reference_sha256")
+                ):
+                    raise ValueError("Workload differs from the correctness capability contract")
         if check_config.get("base_url", "").rstrip("/") != args.base_url.rstrip("/"):
             raise ValueError("Correctness endpoint differs from the benchmark endpoint")
         deployed_sha = ((deployment or {}).get("server") or {}).get("commit")

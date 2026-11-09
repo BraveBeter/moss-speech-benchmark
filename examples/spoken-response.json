@@ -1,0 +1,15 @@
+{
+  "service": {
+    "api": "speech",
+    "tasks": ["t2s"],
+    "streaming": false,
+    "reference_audio": "../../assets/reference.wav",
+    "system": "You are a helpful voice assistant. Answer the user's questions with spoken responses."
+  },
+  "sampling": {"seed": 42, "temperature": 0, "top_k": 1, "repetition_penalty": 1.1, "max_tokens": 128},
+  "datasets": [
+    {"id": "llama_questions", "kind": "openaudio", "source": "../../assets/OpenAudioBench/llama_questions.csv", "audio_root": "../../assets/OpenAudioBench/llama_questions", "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b", "split": "llama_questions", "language": "en", "expected": 300},
+    {"id": "trivia_qa", "kind": "openaudio", "source": "../../assets/OpenAudioBench/trivia_qa.csv", "audio_root": "../../assets/OpenAudioBench/trivia_qa", "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b", "split": "trivia_qa", "language": "en", "expected": 1000},
+    {"id": "web_questions", "kind": "openaudio", "source": "../../assets/OpenAudioBench/web_questions.csv", "audio_root": "../../assets/OpenAudioBench/web_questions", "revision": "98f8fa0d5fa7e530ec8e6f097b55f10b003d111b", "split": "web_questions", "language": "en", "expected": 1000}
+  ]
+}

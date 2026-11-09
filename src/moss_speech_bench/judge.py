@@ -59,6 +59,8 @@ def judge_answer(sample, answer, config, cache, deadline=None):
         max_tokens=1024,
     )
     binding = dict(request=payload, judge=spec, template_commit=UPSTREAM_COMMIT)
+    if "thinking" in spec:
+        payload["thinking"] = spec["thinking"]
     path = Path(cache) / (digest(binding) + ".json")
     if path.exists():
         saved = read_json(path)

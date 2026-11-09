@@ -15,3 +15,5 @@ score默认使用第三方Judge；S2T判已有文本，S2S判已有WAV的ASR转�
 Judge模板属于离线裁判输入，与生成System严格分开。未实现对题面/候选中的提示注入的额外裁判防护；不额外修改上游模板来宣称原论文复现。裁判错误应通过人工抽检和对照集检查。
 
 质量协议升级为moss-quality-v2-llm-judge；v5提示词变化使新旧性能/质量不可直接比较。旧报告不重写，legacy_em仅为显式历史分析选项，不是默认QA指标；旧记录缺少题面时不猜题、不以参考答案代替题面。真实Judge验收需要用户配置可访问的第三方服务；单元测试使用本地模拟响应，不代表已调用真实Judge或重跑模型。
+
+The scoring example uses the DeepSeek OpenAI-compatible endpoint with `model=deepseek-flash` and explicit `thinking.type=disabled`. Endpoint, model/revision and thinking policy are frozen in the score binding and cache key; the API key is read from the named environment variable and never archived.

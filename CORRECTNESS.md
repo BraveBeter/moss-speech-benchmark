@@ -1,319 +1,84 @@
-# Correctness against independent HF references
+# Independent HF correctness regression
 
-Unified entry for any explicitly pinned candidate branch/commit. The numerical
-oracle is the independent HF reference bundle; Git ancestry and a performance
-baseline are not correctness criteria. `hf-reference` is the default profile;
-`eager-base` remains a legacy spelling with the same candidate-independent rules.
-The candidate HEAD must match `core_sha` and the worktree must be clean. The
-example requires you to fill in the candidate path and its full commit SHA.
-The client remains free of Torch, SGLang and HF imports. Model checks run in a
-separate, explicitly configured interpreter; HTTP checks connect to an existing
-service. The suite never starts a server or discovers historical scripts.
+`hf-regression-v1` defines correctness in this client. It does not collect candidate pytest nodes, import candidate tests, check branch names or require ancestry from a performance baseline. The reference runs official local HF code in an isolated interpreter; a versioned backend adapter calls production model APIs in the candidate interpreter. The lightweight coordinator compares frozen data and never imports model code.
 
-The client is used for model correctness, quality and performance evaluations.
-Routine unit tests, Graph/Kernel development tests, debugging, profiling, linting
-and package checks run directly with the owning repository tools. Graph/Kernel
-implementations and their specialized tests belong to the model/engine repository;
-a formal evaluation may invoke those tests and collect their evidence. Development
-checks do not automatically trigger a full suite or qualify a model branch.
+The first adapter, `sglang-native-moss-v1`, covers single-turn text input with spoken answers, using the production MOSS request builder, AR factory and reference-voice Codec. Other model API versions or modalities require an adapter implementing the same data contract; missing coverage cannot become a pass. Performance transport can select supported T2T/T2S/S2T/S2S tasks independently, but formal inference must be covered by the bound correctness certificate.
 
-## Gates and data
+## Gates and numerical policy
 
-| Gate | Required coverage | Execution |
-|---|---|---|
-| C00 | Candidate SHA/clean tree, 50 pinned assets, independent golden/input/voice identities, declared deployment | Control process; full file hashing |
-| C01 | Fixed 514 node IDs including MOSS's 10 unit-test files and shared regressions | Target environment, CPU engine |
-| C02 | 8 processor profiles, 76 named exact comparisons | Separate candidate CPU process, admitted independent HF JSON |
-| C03 | Native prefill/decode isolation + two CUDA seed parameters, 3 tests | Slurm GPU provider |
-| C04 | 8 profiles × 2 complete last-position vocabulary vectors | Full AR weights vs independent HF logits |
-| C05 | EN/CN 250 codes each, complete fixed voice prompt/mel/speaker features | Independent HF safetensors vs candidate encoder |
-| C06 | 24/32/511/512 codes, complete FP32 PCM | Independent original flow.pt + HiFT golden vs candidate decoder |
-| C07 | 16 modality/language/stream combinations + EOS/tail/disconnect/invalid recovery | 20 logical cases, normally 22 HTTP attempts |
-| C08 | Red/blue serial vs simultaneous calls, text and audio | 2 checks, normally 8 HTTP attempts |
+| Gate | Client-owned assertion |
+|---|---|
+| C00 | Clean full candidate SHA, complete asset hashes, independent HF exporter/source closure, frozen input/policy binding; exact repeatability of a fresh HF cached trace |
+| C01 | Actual candidate two-channel prompt grids exactly equal official HF formatting for all declared cases |
+| C02 | Complete unmasked text and audio vocabulary logits at prefill, compared with independent HF |
+| C03 | Teacher-forced cached decode versus HF at every fixed step and each declared batch size; observed active batch sizes and the declared graph execution path |
+| C04 | Unmodified greedy output rows exactly equal HF, serially and at the largest declared batch |
+| C05 | Reference-voice codes, mel features and speaker embedding compared with independent HF |
+| C06 | Fixed-code offline Decoder PCM with frozen HF conditioning and stochastic inputs at 24/32/511/512 codes, compared with independent HF |
+| C07 | Supported HTTP requests, malformed input/budget/reference and unsupported streaming rejection, then successful recovery |
+| C08 | Distinct serial requests versus overlapping concurrent requests, complete PCM equality and a repeat after concurrency |
 
-514 includes the historical 247 MOSS CPU cases; do not add the counts. Inputs:
-canonical JSON (five source conversations expanded to eight processor profiles),
-the pinned 20-second EN/CN WAVs and complete 27.43-second CN voice. Known fixture
-codes do not substitute for encoder tests. Streaming and buffered PCM are not
-mutual golden references. The 511/512 boundary inputs repeat a pinned code sequence
-and are not natural long-speech quality data.
+For BF16 AR, compare FP32-converted full vocabulary vectors using `abs(actual-reference) <= 0.25 + 0.02*abs(reference)`, and require exact raw top1 identity separately. This is the previously registered engineering tolerance, not a quality score or a reason to ignore greedy divergence. Integer grids/codes are exact. Codec FP32 features and PCM use `atol=rtol=1e-5`; shape, dtype and finite values are mandatory. No cropping, padding, NaN equality or tolerance changes after observing results are allowed.
 
-AR comparison uses the admitted HF SDPA/BF16/all-rows reference, seed 20261027,
-with FP32 comparison `abs(candidate-reference) <= .25 + .02*abs(reference)`.
-All 16 raw top1 IDs must also match. Encoder float features and full Codec PCM
-use `atol=rtol=1e-5`; integer codes, shapes and the declared dtype policy are
-strict. The migrated providers preserve the original numerical algorithms and
-full output tensors. No trimming, padding, NaN equality or post-failure tolerance
-adjustment is allowed. Codec CFM seed 42 and original deterministic/cuDNN state
-checks remain in the provider.
+The canonical oracle is official HF cached inference. A second fresh-cache run must reproduce every full vocabulary vector exactly before admission. Complete-prefix recomputation is retained as a diagnostic: it can select a different BF16 attention kernel and is not silently substituted for the cached inference oracle. Development observed such HF-internal differences; no candidate tolerance was increased. The candidate teacher-forcing probe records logits before sampling, then feeds the fixed reference rows back through the production scheduler. It does not replace attention or model layers. C04 separately runs the candidate sampler without forced feedback, preventing teacher-forcing from being mistaken for generation equivalence.
 
-## New eager-base optimization qualification
+C05 compares the actual reference-voice frontend. Integer prompt codes are serialized as int64 without changing inference inputs. C06 isolates the Decoder by feeding identical HF voice tensors, the frozen CausalCFM initial noise and a recorded trace of every Torch random draw into both implementations. It requires matching random-call function/shape/dtype/device and full trace consumption. Equal seeds alone are insufficient across framework versions. No layers or weights are replaced; timed inference uses the ordinary service.
 
-Set `context_remaining: true` independently of the compute `profile` to qualify the 40,960-row context and remaining default generation budget. C01 keeps the frozen base allowlist, replaces the obsolete 513-row rejection with 40961, and adds the 22 existing context/default/stream regression cases. C02 constructs exact 40959/40960 canonical prompts. C07 requires 26 logical checks, including explicit/omitted context admission, 1001-row text and audio, context-overflow rejection/recovery, omitted text EOS and null audio EOS. Pin `long_text_request` in the full-hash asset allowlist; all boundary requests and responses are retained.
+Graph evidence observes SGLang's real decode executor and active request count. A replay of a padded graph is not evidence that its padded capacity was the active batch. HTTP overlap is not engine-batch evidence. Probe instrumentation is absent from timed service inference. Runtime settings must describe the actual deployment; no eager or alternate-attention fallback is used to manufacture coverage.
 
-| Compute profile | Extra qualification | C01 / C03 with context_remaining |
-|---|---|---|
-| hf-reference | Original HF and native CUDA checks | 536 / 3 |
-| ar-decode-graph | Target fixture checks actual full-checkpoint capture/replay, both complete heads and all40 KV layers, plus tiny-model CUDA lifecycle/fallback | 536 / 4 |
-| ar-projection-graph | Explicit projection_graph_batch_size1..4; CPU arithmetic/config/cleanup and four actual CUDA batch profiles with complete model/KV equality | 549 / 7 |
-| mixed-modalities | Typed opt-in and lifecycle/cancel isolation; actual mixed CUDA batch model/KV checks; C08 additionally compares mixed text/audio serial vs overlapping calls | 550 / 4 |
-| native-norm | Explicit pinned library and native-rounding/fallback fixture | 537 / 4 |
+These checks qualify the declared cases, compute path and API. C08 does not prove immediate server KV reclamation or internal cancellation acknowledgement, and a buffered WAV API does not reveal completion-token usage or natural termination. Unreported fields remain unknown.
 
-Deployment must declare the corresponding `ar_graph`, `projection_graph_batch_size` or `mixed_modalities` setting; a mismatched or unqualified compute profile is rejected rather than silently covered by eager results. Projection HF prefill remains eager by design, with replay correctness separately established in C03. Server-side activation evidence is still required to show that the measured deployment used Graph/native/mixed admission: HTTP overlap alone does not establish an engine batch, and the client does not infer server counters from its local checkout. These additions do not change numerical tolerances, reference goldens or named Quick workloads.
+## Prepare and freeze the independent reference
 
-## Batched decode RoPE qualification
+All commands below run from the workspace root. Paths in the specification are relative to its `workspace_root`, itself relative to the specification file. Interpreter paths preserve virtual-environment symlinks. The result paths are relative to the shell working directory. No models are downloaded and no GPU allocation or service is created by the client.
 
-Use `profile: "ar-batched-rope"`, `context_remaining: true`, and deployment
-`decode_rope_reuse: true`. This profile qualifies only per-forward cosine/sine
-reuse for B2/B4 decode; unrelated Graph/native/cache strategies are rejected.
-C01/C03 add fixed fallback, complete-head/KV, context-rounding and CUDA tests.
-C04 retains the eight serial HF checks and additionally teacher-forces all eight
-fixed HF inputs at both B2 and B4, compares both full vocabulary heads with the
-unchanged HF tolerance and raw top1 requirements, and requires exact disabled vs
-enabled full-head/all-40-layer KV proofs plus positive actual execution counts.
-The extra vectors are preserved as `batched-rope-logits.safetensors` with their hash.
-
-Pin `service_activation_log` and optional nonnegative `service_activation_offset`.
-C08 requires the actual `batched RoPE reuse active` execution marker, not a startup
-configuration message. After Quick, independently archive an activation audit
-for that same service/run using `python -m moss_speech_bench.providers.ar_combination
---config <correctness.json> --output <run>/execution/activation`; do not infer an
-engine batch from HTTP concurrency alone. This does not change named workloads,
-reference tensors, tolerances, or qualify combinations of optimizations.
-
-## Configure and run
-
-Use [examples/correctness.json](examples/correctness.json). Its workspace root
-is relative to the configuration file; every other path explicitly uses
-`{workspace_root}`. Update the candidate interpreter, existing model assets,
-reference locations and operator-supplied resolved deployment metadata. Set both
-`core_sha` and `deployment.core_sha` to the actual candidate, with no ancestor
-requirement. Asset
-hashes are fixed before execution. The example binds this workspace's admitted
-independent HF bundle; it does not distribute weights or tensor files.
-
-C00 hashes all listed files, including weight shards, and checks cross-bundle
-input/voice/tensor identities. It records fresh hashes and reference lineage.
-The original reference JSON files retain their historical paths; providers use
-explicit current paths and never rewrite those files. To introduce a different
-reference, first independently export and admit its provenance, environment,
-source closure, numerical settings and hashes. Candidate outputs are never golden.
+Copy and edit [hf-regression.json](examples/hf-regression.json) for existing local model/Codec checkpoints, official Codec source dependencies, the actual candidate checkout and interpreters. Declare authorized local GPU indices or use an existing Slurm allocation. Preparation also writes `deployment.expected.json`: it is a comparison template, not an observed service record. The operator must verify the real deployment and supply its `server.commit/dirty` and `hf_regression` asset/runtime binding before formal inference. Preparation hashes every local model/Codec asset, the reference voice and external Python source closure before any inference, and freezes the candidate SHA when omitted:
 
 ```bash
-# Result location is independent of the checkout/worktree working directory.
-MOSS_BENCHMARK_RESULTS_ROOT=/remote-home1/xrluan/speech-rep/benchmark-results
+moss-speech-bench --phase hf-prepare --config benchmark-client/examples/hf-regression.json \
+  --output-dir benchmark-results/hf-setup/execution
 
-# CPU selection and processor; intentionally incomplete as a full-suite result
-moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
-  --checks C00,C01,C02 --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness"
-
-# After arranging Slurm resources, run model providers in their own environment.
-# Configure providers.C03..C06.launcher as an argv prefix such as:
-# ["srun", "--partition=a800", "--gres=gpu:1", "--time=00:20:00", "/usr/bin/env"]
-moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
-  --checks C03,C04,C05,C06 --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness" --resume
-
-# Release provider processes; start the target service outside this client.
-moss-speech-bench --phase correctness --correctness-config examples/correctness.json \
-  --checks C07,C08 --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness" --resume
-
-# Validate saved artifact hashes and regenerate the report without sending requests
-moss-speech-bench --phase correctness-report --output-dir "$MOSS_BENCHMARK_RESULTS_ROOT/correctness-single/correctness"
+moss-speech-bench --phase hf-reference \
+  --correctness-config benchmark-results/hf-setup/execution/correctness.json \
+  --output-dir benchmark-results/hf-reference
 ```
 
-Providers require a Python 3.12 candidate runtime with the target dependencies.
-CPU lanes must run on a compatible node; configure C01/C02 launchers as CPU-only
-Slurm tasks (e.g. `--gres=none`) when the login-node ABI differs. Inside the job,
-the entry sets CPU-engine mode and hides CUDA before imports. GPU lanes clear
-that override and require a Slurm allocation or an explicit local allocation. The interpreter and launch prefix
-are explicit argv, never shell snippets. The scheduler and GPU budget are owned
-by the outer workflow; the client does not allocate GPUs without configuration.
+Each reference contains AR grids/full logits/greedy rows, Codec features/PCM, source/runtime metadata, the exporter snapshot and SHA256 file ledger. The HF process asserts that it imported no candidate or SGLang module. Checkpoint paths may move; stable asset IDs and their hashes, inputs, system, seed, decoder vectors and numerical policy must remain identical. A different candidate SHA or attention backend does not redefine the HF oracle.
 
-Single/dual deployments use separate run directories. Dual placement is AR on
-GPU0, encoder/vocoder on GPU1, TP1. Reuse of CPU/component evidence across runs
-must be explicitly documented; this interface does not automatically merge
-historical runs into a pass. Deployment metadata is an operator declaration,
-not proof of server internals obtained through HTTP.
+Use a new reference directory for a new binding. Failed exports and partial worker logs are retained; they are not admitted as references. Reference export alone does not qualify a candidate.
 
-## Assertions, artifacts and recovery
+## Correctness, performance and offline quality
 
-C07 reuses ChatClient, SSE reconstruction, WAV parsing and request persistence,
-then checks terminal/DONE ordering, usage arithmetic, modality exclusivity,
-nonzero PCM, 24kHz mono format and chunk/code sample counts. Disconnect records
-`client_closed=true` and `server_cancel_ack=null`; a successful follow-up does
-not prove immediate KV cleanup. Expected HTTP 400 is checked separately from a
-successful generation. All attempts and raw response events are retained.
-
-C08 requires different serial red/blue content, positive overlapping call
-intervals on independent connections, exact text/finish/usage and complete PCM.
-WAV headers and response IDs are excluded. One LSB is a failure. Diagnostics
-include mismatch counts and first positions. HTTP overlap does not prove engine
-batch size > 1.
-
-`correctness.json` and `correctness.md` are independent of performance/quality
-artifacts. Per-gate directories retain commands, environment declarations,
-module origins, JUnit, exact node IDs, logs, requests/WAV and numerical tensors.
-Required status values are pass/fail/skip/not_run/unsupported. Only all nine
-required gates passing yields exit 0; failures or incomplete coverage exit 1.
-Invalid configurations/artifact corruption exit 2. Zero collection, required
-skips and exit-code-only provider success cannot pass.
-
-A resumed run requires the same configuration, client and provider data, valid
-artifact hashes and unchanged clean candidate source. Passed gates are reused;
-failed/interrupted gates rerun as a whole in a fresh attempt directory. Failed
-results remain in history and their files are still verified. A partial subset
-is always incomplete, including a standalone C08 diagnostic. Running the full
-suite without `--checks` stops dependent work at the first failed gate.
-
-This integration has local protocol/contract tests, fresh CPU 514 and processor
-76 comparisons, and three CPU/Torch tensor-policy tests. Real GPU C03–C06 and
-single/dual-service C07–C08 have not been rerun by this integration. Historical
-successes are preserved as historical evidence, not new acceptance results.
-
-正确性阶段也必须归入工作区`benchmark-results/<run_id>/correctness/`，与同次性能/质量结果共用run根。只运行正确性时，在run根保留简短summary.md入口，详细断言仍在correctness/correctness.md；不向.audit或源码仓库另存报告。
-
-
-The explicit native-norm profile accepts any full clean candidate SHA and an operator-built library pinned by the same asset allowlist and deployment SHA256. It preserves all C00–C08 checks, numerical thresholds and golden identities; C01/C03 append fixed norm fallback/actual-CUDA qualification cases. C04 installs the same norm library on the candidate model before its full-vocabulary comparison. A successful eager-base certificate does not qualify the native-norm profile, and profile/library changes invalidate resume identity. Native service manifests must enable this exact library independently; the client never enables a service feature by changing its own environment.
-
-The native-tail-research profile is deliberately incomplete: it pins the candidate SHA, the original Lt reference module and a helper compiled against the current headers. C03 retains the base native tests, checks actual struct sizes/offsets, observes the original version rejection, and runs a separately labelled in-memory version-override diagnostic on checkpoint affine weights. No on-disk guard is changed. Those local full/tail affine observations cannot qualify complete CFM, prefix ownership or a serving branch; C03 remains unsupported and subsequent HTTP/Quick gates stay blocked. The report retains every API failure and numerical mismatch.
-
-## Compute-path coverage
-
-Candidate identity and numerical-adapter support are separate. C00 admits any
-clean pinned candidate and validates the declared placement and voice; capacity,
-chunk size and GPU count are not required to match the historical eager service.
-HF weights/revisions, deterministic inputs, independent goldens and all existing
-numerical thresholds remain unchanged.
-
-The current C04 adapter covers BF16, torch_native attention, TP1 and AR graph off;
-C05/C06 cover FP32 Codec. A different declared compute path is `unsupported` at
-the relevant gate, which blocks dependent inference. The client never silently
-substitutes the eager path to qualify a graph/kernel configuration it did not run.
-Extend the corresponding adapter to execute and compare that actual path before
-claiming support. A passing branch-independent admission check is not a model
-numerical pass. C01/C03 still require the fixed test node IDs in the candidate;
-missing or skipped tests are never treated as success.
-
-
-## New eager base and P2 migration profiles
-
-`context-remaining` qualifies the 40960 logical/40962 physical context and remaining-budget default. `context-small-first`, `context-startup-schedule`, and `context-prefill-graph` include the same contract plus the corresponding existing strategy tests. Candidates remain identified by any explicit full SHA; Git ancestry is not an oracle.
-
-All four require `long_text_request` in the pinned asset allowlist. C01 runs 536 baseline cases, 563 for small-first, 596 for startup schedule. C02 constructs exact 40959/40960 prompt probes. C07 requires acceptance/rejection, explicit 1001-token text/audio output, omitted/null budget with early EOS, and recovery: 26 named checks. C08 retains exact concurrent isolation for each selected strategy.
-
-For small-first set `deployment.small_first_chunk=true`; for schedule set it false and `deployment.stream_startup_schedule="6_8_align25"`. These must match the actual `audio_vocoder.factory` fields in the externally started server. Other context profiles leave both disabled. All use `context_limit=context_length=40960` and `max_total_tokens=40962`.
-
-Prefill graphs additionally require `graph_lengths` and identical `deployment.prefill_graph_lengths` (one to eight distinct lengths within 1..512), and `deployment.ar_graph=true`. C03 runs the existing full prefill graph GPU test; C04 invokes the candidate full-weight fixture, requires actual capture/replay and exact complete heads/scattered KV across all 40 layers. Unsupported shapes remain eager; a successful fallback alone does not qualify Graph. Example factory field: `ar_engine.factory.prefill_graph_lengths=[34,41]`.
-
-C06 remains an independent HF full offline codec comparison. Startup changes the streaming chunk schedule and may change PCM; C07/C08 verify the actual strategy's protocol, full sample accounting, repeatability and isolation, not cross-strategy waveform or perceptual equality. Offline quality scoring is separate.
-
-The eight independent HF AR cases remain the original prefill inputs. Finite Graph qualification additionally checks candidate complete-checkpoint Graph against eager heads/KV; if the HF cases are outside the configured bank, they are fallback coverage and are not a new direct Graph-HF numerical oracle.
-
-## P4 migration regression selection
-
-The `context-remaining` compute profile accepts an optional fixed `test_suite`: `p4-15` (codec unready return, 545 CPU/3 CUDA), `p4-16` (sampling return, 540/9), `p4-17` (host overlap, 536/4), or `p4-18` (shared HiFT, 539/4). Each retains the full new-context suite and explicitly maps renamed strategy tests. The default `legacy` selection preserves every existing compute profile. Unknown suites, duplicate or absent replacement nodes, skips and incomplete collection fail qualification. Both the isolated provider and validator use the same fixed composition; execution remains in the candidate repository.
-
-The shared-HiFT CUDA test requires the provider's `MOSS_CODEC_PATH`, `MOSS_AUDIO_VOICE` and `MOSS_CODE_PROFILE` assets; a missing-asset skip cannot pass C03. These additions change no numeric threshold, HF reference, HTTP check, performance metric, workload, or scoring behavior.
-
-
-### Optional P3 strategies on the40960-context candidate
-
-Set `context_remaining: true` independently of `profile`. The fixed CPU/CUDA selectors include the new context/budget regressions and the strategy-specific tests; skipped or uncollected required tests fail qualification. Supported profiles are `ar-prefix-cache`, `ar-sampling-history`, `ar-host-metadata`, `direct-lt`, `codec-cfm-graph`, `codec-fairness`, and `codec-score-release`. Deployment activation must match the profile; DirectLt additionally pins its explicit current-ABI library in the asset allowlist.
-
-C04 compares both full-checkpoint vocabulary heads to the independent HF oracle. Prefix cache also checks actual cached-prefill logits/allKV; host metadata runs the actual backend for all eight HF cases. C03 covers CUDA history/RNG, backend isolation, real DirectLt calls, and real CFM capture/replay or fairness with complete streaming PCM and cleanup. Streaming Graph/fairness fixtures run in the candidate repository; C06 separately retains the independent offline full-codec HF comparison. These scopes are separate: an eager fallback cannot qualify a graph. C07 includes missing/null remaining budget,40960 context boundaries, outputs exceeding1000, EOS and tail recovery; C08 requires actual concurrent isolation. Quick performance remains a separate120-request stage after allnine gates pass.
-
-DirectLt native qualification stays in the two fixed C03 tests: actual qualified CUDA affine launches must match the original Torch linear bit for bit, and actual streaming native calls must preserve complete PCM, ownership, interleaving and cleanup against eager. Skips or a successful eager fallback cannot qualify this native scope.
-
-C06 retains the independent HF offline 24/32/511/512 code comparisons, complete PCM and original tolerances. The provider records FULL_LENGTHS from the candidate source. The parent verifies the fixed current-ABI domain 1392/1400/1424/1500 and derives each unpadded mel length as `(actual_voice_prompt_tokens + code_count) * 4`. The current 342-token voice yields 1464/1496/3412/3416, all outside the domain: owner installation/closure remain mandatory, native calls must be zero and the extra check is labelled offline-shape-fallback. These HF results qualify the offline fallback, not a native oracle. If a future fixed voice/input produces any qualified length, C06 requires positive native calls; zero calls never receive a generic activation pass. This distinction changes no C03 requirement, numerical threshold, reference golden, HTTP check or Quick workload.
-
-
-## Explicit AR combinations
-
-`profile: ar-combination` qualifies an explicit `ar_optimizations` list of at least two strategies drawn only from `ar-decode-graph`, `ar-projection-graph`, `context-prefill-graph`, `native-norm`, `ar-host-metadata`, and `mixed-modalities`. Unknown or duplicate strategies, undeclared enabled paths, mismatched settings and unsupported extra optimizations fail admission. Set `context_remaining: true`; the independent HF assets, numerical tolerances and C00–C08 remain unchanged.
-
-Declare `deployment.decode_graph` independently of prefill; `deployment.ar_graph` is true when any selected Graph is enabled. Match `projection_graph_batch_size`, `graph_lengths`/`deployment.prefill_graph_lengths`, `deployment.use_host_attention_metadata` and `deployment.mixed_modalities` exactly to the selection. Native norm requires the explicit library, full asset hash and matching `deployment.native_norm_library_sha256`.
-
-C01/C03 retain the fixed remaining-context selection, resolve the integrated branch's named regression replacements explicitly, and append each selected strategy's qualification plus the combined CUDA regression. Missing nodes, skipped cases and failed collection cannot pass. C04 loads the full checkpoint and invokes the candidate's combined fixture. Each selected strategy must report actual execution and complete-head/all-KV equality; each selected Graph must additionally capture and replay. Eight independent HF full-vocabulary comparisons remain mandatory. Native execution during capture is labelled capture execution; Graph replay does not execute Python counters. Mixed admission retains the third concurrent-isolation group in C08.
-
-Set `service_activation_log` to the fresh owned server log and, if it already contains data, `service_activation_offset` to its byte length before startup. C08 saves the observed log bytes, hash and per-strategy counts; unobserved paths remain `not_observed` because the HTTP gate may not form a batch eligible for projection replay. After Quick and the matched custom workloads, run the strict activation audit below. Its frozen JSON/log remain evidence even on failure. Every selected strategy requires a positive actual-execution marker by default. Only prefill may be omitted from `service_activation_required` when HTTP input lengths do not enter its finite bank; report that scope as C04 qualification with service replay unobserved, rather than a serving activation pass. Native startup markers alone do not prove request execution. The audit requires an actual selected Graph replay line with both `native_norm_capture_calls>0` and `native_owners>0`, or the explicit `native norm eager request execution active` marker. Owner installation with zero native capture calls cannot qualify native serving.
+Pre-service numerical checks can be run first, keeping GPU capacity available to the isolated workers:
 
 ```bash
-python -m moss_speech_bench.providers.ar_combination \
-  --config /absolute/run/execution/correctness.json \
-  --output /absolute/run/execution/final-activation
+moss-speech-bench --phase correctness \
+  --correctness-config benchmark-results/hf-setup/execution/correctness.json \
+  --checks C00,C01,C02,C03,C04,C05,C06 \
+  --output-dir benchmark-results/candidate-quick/correctness
 ```
 
-Use the same frozen client commit, input hashes, GPU UUID, dtype, voice, seed and explicit token budget for new eager-base, selected single-strategy and combination measurements. Run each final deployment's C00–C08 before named Quick. Keep standard Quick C4, four-modality C1 and mixed C2 in separate run directories. Mixed results must retain pair completion time and individual latency/TTFA/RTF tradeoffs. Previous single-strategy measurements are historical evidence and do not count as new combination results.
+Start the actual candidate service outside the client. Match its model assets, dtype, attention, graph policy, capacity, reference voice and full SHA in the resolved deployment record. Update [spoken-response.json](examples/spoken-response.json) for the three existing OpenAudioBench CSVs and the same voice. Correctness and timed workload must declare the same API, system, tasks, streaming policy and voice identity:
 
-A projection batch profile is part of the measured deployment identity. B1 results do not establish B4 end-to-end benefit; tiny-model CUDA tests for B1–B4 establish correctness only. Select performance configurations from independently demonstrated workloads and retest each proposed stack.
+```bash
+moss-speech-bench --mode quick --config benchmark-client/examples/spoken-response.json \
+  --model moss-speech --base-url http://127.0.0.1:8000 --no-stream \
+  --deployment deployment.local.json \
+  --correctness-config benchmark-results/hf-setup/execution/correctness.json \
+  --output-dir benchmark-results/candidate-quick
 
-### Serial B2/B4 full-decode graph extension
+# Stop the generation service externally before loading scoring models.
+moss-speech-bench --phase score --output-dir benchmark-results/candidate-quick \
+  --score-config scoring.local.json
+moss-speech-bench --phase report --output-dir benchmark-results/candidate-quick
+```
 
-`profile: "ar-serial-decode-graph"` requires `context_remaining: true` and explicit
-`deployment.decode_graph_serial_batch`, `deployment.decode_graph`, and
-`deployment.ar_graph` all true. Other optimization combinations are rejected.
-C01 retains baseline regressions and adds transaction/ownership/error cases; C03
-retains B1 graph qualification and adds actual serial B2/B4 CUDA qualification.
-C04 preserves the original eight independent HF full-prefill comparisons and
-requires the full-trained-checkpoint serial fixture: actual B2/B4 execution,
-complete hidden/dual-head/all40KV exactness, output ownership, all-row rejection,
-runtime guards, boundary fallback and no partial-failure eager retry. No local
-timing or eager-only execution substitutes for those checks.
+Quick retains three datasets, stable 20-question subsets, concurrency four, three repeats and per-repeat warmup. One declared T2S path therefore sends 180 formal and 36 warmup requests. T2S answers carry `quality_task=qa`: ASR then semantic Judge, plus UTMOS. Custom reading tasks retain their existing WER/CER/SIM interpretation; the input question must not become the transcript target for a spoken answer. Missing finish reason/usage and non-streaming first-event times are N/A, never fabricated values.
 
-C08 archives serving activation observations but does not assume its isolation
-workload creates both batch sizes. **After Quick**, run the activation audit
-command above against the same fresh service log. It must observe actual
-`serial batch decode graph replay active batch=2` **and** `batch=4`; startup-only,
-B1-only, one batch size or stale log slices fail. No E2E closure is claimed until
-this final audit and complete-output comparisons pass. This extension does not
-relax existing fixed-HF tolerances or change old profiles.
+The client can execute independent numerical gates even if another numerical gate fails, yielding a useful complete diagnosis. Only valid C00 permits dependent work; only all C00–C08 passing permits formal inference. A missing worker artifact, zero comparisons, unsupported path, required failure or incomplete gate blocks performance. No `--checks` subset substitutes for a complete certificate.
 
-### Phase-matched independent HF decode reference
+## Identity, replay and historical compatibility
 
-The `ar-batched-rope` C04 extension additionally requires
-`golden.C04_cached_decode.{report,tensors}`, both pinned in the C00 asset allowlist.
-This is an independently exported HF N-1-row prefill plus one cached decode step
-on the same eight canonical inputs, official revision, BF16/SDPA settings and seed.
-All three cache banks, positions, full input grids, module hashes and tensor bytes
-are validated. Actual B2/B4 decode heads are checked against this phase-matched
-reference with the unchanged finite/allclose/raw-top1 rules. The original HF
-full-prefill reference and all serial checks remain mandatory; it is not replaced
-by candidate/base outputs. Historical failed runs remain failed.
+Every run freezes the candidate/client identities, input configuration, reference hashes, tensor comparisons, actual graph/batch observations, raw requests, responses and failures. The correctness certificate is hash-bound to inference and revalidated by score/report. Resume requires unchanged configuration/client source and valid artifacts; failed attempts remain in history. It never recomputes a golden from candidate output or upgrades old evidence to a new pass.
 
-### Live Codec attention-bias broadcasting
-
-`profile: "codec-bias-broadcast"` requires `context_remaining: true` and explicit
-`deployment.broadcast_attention_bias: true`; other optimization combinations are
-rejected. C01 adds strict config/factory/public-method fallback regressions; C03
-adds actual-CUDA live-bias equality and full trained streaming PCM/intermediate/
-request-state isolation checks, preserving the report in its gate directory.
-C06 enables the real `AudioDecoder` production flag during the original fixed-HF
-full-PCM comparisons, requiring all56 installed processors to execute and retain
-zero head strides. Constructor flags or eager fallback alone cannot qualify it.
-After Quick, the fresh serving activation audit must observe the actual
-`MOSS_CODEC_BIAS_BROADCAST_ACTIVE` marker. No reference tolerance, backend policy,
-input, sampling or named Quick workload is changed.
-
-## Operator-owned local GPUs
-
-On a dedicated host/container without Slurm, explicitly add `local_gpu_allocation: {"devices": [1], "authorization": "operator authorization for this run"}` to the correctness configuration. The external launcher must reserve those devices and use the same visible devices for serving. Providers set and validate CUDA_VISIBLE_DEVICES, require usable CUDA, and archive device properties and the declaration in each GPU gate. This is operator-supplied allocation metadata, not a scheduler reservation. Never fabricate SLURM_JOB_ID; existing Slurm configurations still work. Numerical checks, pinned assets, source cleanliness and C00–C08 coverage remain unchanged.
-
-## Eager feedback fixes
-
-Use `profile: context-remaining` with `test_suite: eager-bugs` for the candidate that removes the unused processor collate interface. The same explicit suite composes with the existing optimization profiles when `context_remaining: true`; each profile retains its full specialized qualification and activation requirements. AR combinations propagate the suite into their baseline regression selection. C01 keeps 536 baseline nodes, replacing the two collate-only tests with buffered/streaming zero-code completion regressions and updating the codec empty-final lifecycle test, then adds the selected strategy's checks. C02 uses the same independent HF reference, all eight request grids, masks, lengths, token encodings and defaults (55 exact comparisons); the 21 collate/padding comparisons no longer describe a serving interface. The explicit suite and report contract must agree. Legacy candidates retain all 76 comparisons. C03–C08, context probes and Quick requirements are unchanged. Empty audio is valid for the one-token boundary regression; normal Quick empty-output failures remain failures.
-
-## Cumulative optimization stages
-
-`profile: cumulative` requires `context_remaining: true`, `test_suite: eager-bugs`, and an explicit unique `optimizations` list. Every activation flag, library, finite graph shape and serving factory option must match the declaration. Serial decode retains its B1 dependency. Unknown paths and missing qualification nodes fail admission. The pinned HF assets, all eight request cases, numerical tolerances, request isolation and normal Quick failure rules remain unchanged.
-
-C01/C03 retain the new eager regressions and compose the fixed selected-strategy nodes, including the original P4 CUDA/RNG/component-lifetime suites. Multiple AR paths require actual joint complete-head/all-KV evidence from `assert_cumulative_ar`; the serial-only AR subset retains the original trained B1/B2/B4 qualification, ownership, runtime guards and no-partial-retry proof. Batched RoPE still requires its independently exported cached-HF phase reference. The joint CUDA regression supplements rather than replaces the original eight C04 HF comparisons.
-
-Set `cumulative_api: independent` when the candidate combines independent strategy ports rather than the historical integrated AR API. This composes every selected strategy's frozen atomic checks and a joint CUDA check; it does not require unrelated projection, prefill or mixed-modality APIs. Omitting this field preserves the integrated AR selection contract. Both modes require the same trained joint proof and independent HF checks.
-
-When strategies replace the same baseline node with nested sets or distinct parameterizations of that same fixed test, cumulative selection retains every required case, independent of strategy order. Incompatible test destinations still fail. Full strategy lists reuse the selected baseline replacements, and explicitly empty extra gates retain their original baseline checks.
-
-When at least two streaming Codec strategies are selected, C06 additionally requires `assert_cumulative_codec` from the candidate's trained-checkpoint test fixtures. Its evidence must bind the same frozen full-HF reference files, preserve the original PCM tolerance and code ledger, prove request/RNG/cleanup isolation, and demonstrate executions for every declared path. A missing helper or inactive path fails qualification; registering an option does not qualify a combination. Independent single-path C06 checks remain mandatory, including all56 live-bias processors and the pinned DirectLt domain when selected.
-
-After complete named Quick, audit the same fresh serving log. Every required marker must be observed, including both serial B2/B4 sizes and native execution evidence. Exact-length prefill may retain the existing explicit activation exception when the fixed workload does not hit its registered lengths; this never establishes a prefill performance gain.
-
-Freeze one client commit across matched measurements whenever possible. If cumulative qualification needs a client update, an earlier matched run can remain a reference only with an archived exact-commit source audit proving every transport, request, timing, parsing, statistics and workload module byte-identical, unchanged HF policy/assets, and identical legacy regression selections. Explicitly record both client identities and the allowed qualification-only difference; preserve the earlier manifest and raw metrics. Any measurement or workload change requires rerunning the affected references. This exception does not permit changing a numerical tolerance, relabeling an old runtime identity, or treating an unqualified candidate as passed.
+Configurations without `protocol=hf-regression-v1` retain the [legacy providers](LEGACY_CORRECTNESS.md). Their historical test allowlists, numerical algorithms and reports remain available for reproduction. They are not the recommended entry for new model APIs. Backend adapter changes, candidate code/config changes or additional modalities require the affected checks again; same-name branches do not confer coverage.

@@ -1,0 +1,49 @@
+{
+  "protocol": "hf-regression-v1",
+  "adapter": "sglang-native-moss-v1",
+  "workspace_root": "../..",
+  "core_root": "worktrees/candidate",
+  "core_sha": null,
+  "candidate_python": "environments/candidate/bin/python",
+  "reference_python": "environments/hf/bin/python",
+  "model_path": "assets/MOSS-Speech",
+  "codec_path": "assets/MOSS-Speech-Codec",
+  "voice_wav": "assets/reference.wav",
+  "hf_source_root": "assets/MOSS-Speech-source",
+  "reference": "benchmark-results/hf-reference/reference.json",
+  "model": "moss-speech",
+  "base_url": "http://127.0.0.1:8000",
+  "service": {
+    "api": "speech",
+    "tasks": ["t2s"],
+    "streaming": false,
+    "system": "You are a helpful voice assistant. Answer the user's questions with spoken responses."
+  },
+  "sampling": {"seed": 42, "repetition_penalty": 1.1},
+  "teacher_rows": [[151667, 3], [151667, 17], [151667, 16384], [19, 512], [151646, 512], [151667, 5], [151667, 6], [151667, 7]],
+  "greedy_steps": 8,
+  "batch_sizes": [1, 2, 4],
+  "codec_codes": [3, 17, 101, 512, 1000, 8191, 42, 16000],
+  "codec_code_counts": [24, 32, 511, 512],
+  "tolerances": {"logits_atol": 0.25, "logits_rtol": 0.02, "codec_atol": 0.00001, "codec_rtol": 0.00001},
+  "runtime": {
+    "max_running_requests": 4,
+    "max_queued_requests": 20,
+    "max_total_tokens": 40962,
+    "attention_backend": "flashinfer",
+    "disable_cuda_graph": false
+  },
+  "gpu_memory_fraction": 0.72,
+  "http_max_tokens": 128,
+  "worker_timeout": 1200,
+  "local_gpu_allocation": {
+    "devices": [0],
+    "authorization": "Replace with the operator's explicit authorization for this local device."
+  },
+  "cases": [
+    {"id": "en-capital", "text": "What is the capital of France?", "language": "en"},
+    {"id": "en-arithmetic", "text": "What is two plus two?", "language": "en"},
+    {"id": "zh-capital", "text": "中国的首都是哪里？", "language": "zh"},
+    {"id": "zh-arithmetic", "text": "一加一等于几？", "language": "zh"}
+  ]
+}

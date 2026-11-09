@@ -10,12 +10,16 @@ from .storage import digest, read_json
 
 QA_DATASETS = {"llama_questions": 300, "trivia_qa": 1000, "web_questions": 1000}
 QA_TASKS = ("s2t", "s2s")
+SUPPORTED_QA_TASKS = {"t2t", "t2s", "s2t", "s2s"}
 QUICK_SAMPLES = 20
 QUICK_INFER_BUDGET_S = 2040
 QUICK_SCORE_BUDGET_S = 180
-SUITE_VERSION = "moss-spoken-qa-v5"
+SUITE_VERSION = "moss-qa-v6-capabilities"
 NATIVE_TEXT_SYSTEM = "You are a helpful assistant. Respond with text outputs."
 NATIVE_AUDIO_SYSTEM = "You are a helpful assistant. Respond with spoken outputs."
+DEMO_AUDIO_SYSTEM = (
+    "You are a helpful voice assistant. Answer the user's questions with spoken responses."
+)
 
 
 def deferred_evaluations(mode):
@@ -74,7 +78,9 @@ def _records(spec, root):
     raise ValueError(f"Unknown dataset kind: {kind}")
 
 
-def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, subset_seed=42):
+def prepare_dataset(
+    spec, root, *, model, stream, sampling, subset_size=None, subset_seed=42, service=None
+):
     task = spec["task"]
     if task not in TASKS | {"mixed"} or spec["language"] not in ("en", "zh"):
         raise ValueError("Invalid task or language")
@@ -144,7 +150,7 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
                 }
             ]
         else:
-            content = row["text"]
+            content = row.get("text", row.get("question"))
             if not isinstance(content, str) or not content.strip():
                 raise ValueError(f"Empty text: {sample_id}")
             if "template" in prompt:
@@ -160,6 +166,19 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
             payload["messages"].insert(0, {"role": "system", "content": prompt["system"]})
         if row_task.endswith("s") and stream:
             payload["audio"] = {"format": "pcm"}
+        if service and service["api"] == "speech":
+            if row_task != "t2s" or stream:
+                raise ValueError("Speech API supports only non-streaming t2s")
+            payload = dict(sampling)
+            if "max_tokens" in payload:
+                payload["max_new_tokens"] = payload.pop("max_tokens")
+            payload.update(
+                model=model,
+                input=content,
+                stream=False,
+                response_format="wav",
+                ref_audio=service["reference_data"],
+            )
         prepared.append(
             {
                 "id": sample_id,
@@ -167,7 +186,17 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
                 "language": spec["language"],
                 "payload": payload,
                 "expected": row.get("expected", row.get("text")),
-                **({"question": row["question"]} if row.get("question") else {}),
+                **({"quality_task": spec["quality_task"]} if spec.get("quality_task") else {}),
+                **(
+                    {"endpoint": "/v1/audio/speech"}
+                    if service and service["api"] == "speech"
+                    else {}
+                ),
+                **(
+                    {"question": row.get("question", row.get("text"))}
+                    if row.get("question") or (spec["id"] in QA_DATASETS and row.get("text"))
+                    else {}
+                ),
             }
         )
     metadata = {
@@ -178,6 +207,8 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
         metadata.update(prompt=prompt, prompt_hash=digest(prompt))
     if selection:
         metadata.update(expected=len(prepared), selection=selection)
+    if service:
+        metadata["service"] = {k: v for k, v in service.items() if k != "reference_data"}
     source = root / spec["source"]
     if source.is_file():
         metadata["source_file_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -187,6 +218,11 @@ def prepare_dataset(spec, root, *, model, stream, sampling, subset_size=None, su
 def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_seed=42, tasks=None):
     path = Path(path).resolve()
     config = read_json(path)
+    service = config.get("service")
+    if service is not None:
+        from .service import service_config
+
+        service = service_config(service, path.parent, stream)
     sampling = config.get("sampling", {})
     allowed = {"seed", "temperature", "top_p", "top_k", "min_p", "repetition_penalty", "max_tokens"}
     if not isinstance(sampling, dict) or set(sampling) - allowed:
@@ -199,7 +235,7 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
     task_prompts = config.get("task_prompts", {})
     if (
         not isinstance(task_prompts, dict)
-        or set(task_prompts) - set(QA_TASKS)
+        or set(task_prompts) - SUPPORTED_QA_TASKS
         or any(not isinstance(prompt, dict) for prompt in task_prompts.values())
         or (task_prompts and not named)
     ):
@@ -219,18 +255,27 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
             raise ValueError("Named speech-QA suites require English and tasks, not a single task")
     datasets = {}
     for spec in specs:
-        selected_tasks = tasks if tasks is not None else spec.get("tasks", QA_TASKS)
+        selected_tasks = (
+            tasks
+            if tasks is not None
+            else spec.get("tasks", service["tasks"] if service else QA_TASKS)
+        )
         if named and (
             not isinstance(selected_tasks, (list, tuple))
             or not selected_tasks
             or len(set(selected_tasks)) != len(selected_tasks)
-            or not set(selected_tasks) <= set(QA_TASKS)
+            or not set(selected_tasks) <= (SUPPORTED_QA_TASKS if service else set(QA_TASKS))
         ):
-            raise ValueError("Speech-QA tasks must be unique s2t/s2s values")
+            raise ValueError("QA tasks must be unique t2t/t2s/s2t/s2s values")
+        if service and not set(selected_tasks) <= set(service["tasks"]):
+            raise ValueError("Selected tasks exceed declared service capabilities")
         for task in selected_tasks if named else [spec["task"]]:
             resolved = dict(spec, task=task)
             if named:
-                official = NATIVE_TEXT_SYSTEM if task == "s2t" else NATIVE_AUDIO_SYSTEM
+                resolved["quality_task"] = "qa"
+                official = NATIVE_TEXT_SYSTEM if task.endswith("t") else NATIVE_AUDIO_SYSTEM
+                if service and service["api"] == "speech":
+                    official = service["system"]
                 supplied = task_prompts.get(task, spec.get("prompt", {}))
                 if supplied and supplied != {"system": official}:
                     raise ValueError("Named suites require the official default system prompt")
@@ -243,6 +288,7 @@ def load_workload(path, model, stream, mode, subset_size=QUICK_SAMPLES, subset_s
                 sampling=sampling,
                 subset_size=subset_size if mode == "quick" else None,
                 subset_seed=subset_seed,
+                service=service,
             )
             name = f"{spec['id']}-{task}" if named else spec["id"]
             if named:

@@ -38,6 +38,10 @@ def load_suite(path):
 
     path = Path(path).resolve()
     config = read_json(path)
+    if config.get("protocol") == "hf-regression-v1":
+        from .hf_regression import load_config
+
+        return load_config(path)
     workspace = (path.parent / config["workspace_root"]).resolve()
     config["workspace_root"] = str(workspace)
 
@@ -750,6 +754,10 @@ def render_correctness(root):
 
 async def run_correctness(path, output, selected=None, resume=False):
     config = load_suite(path)
+    if config.get("protocol") == "hf-regression-v1":
+        from .hf_regression import run
+
+        return await run(config, output, selected, resume)
     output = Path(output)
     if not resume and output.exists() and any(output.iterdir()):
         raise ValueError("Use a fresh correctness output directory")

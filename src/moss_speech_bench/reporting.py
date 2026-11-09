@@ -54,6 +54,7 @@ def summarize(rows, expected, wall_s):
         coverage=len(rows) / expected if expected else None,
         wall_clock_s=wall_s,
         length_count=sum(r.finish_reason == "length" for r in observations),
+        unknown_finish_count=sum(r.is_success and r.finish_reason is None for r in observations),
         ttfa_requests=sum(r.is_success and r.audio_ttfp_s is not None for r in observations),
         ttft_requests=sum(r.is_success and r.text_ttft_s is not None for r in observations),
         rtf_requests=sum(r.is_success and r.audio_duration_s > 0 for r in observations),
@@ -366,6 +367,7 @@ def correctness_section(root, manifest):
         *header,
     ]
     for gate_id, name in zip(sorted(suite["gates"]), names, strict=True):
+        name = suite.get("gate_names", {}).get(gate_id, name)
         gate = suite["gates"][gate_id]
         checks = gate.get("checks", [])
         count = sum(check["status"] == "pass" for check in checks)
