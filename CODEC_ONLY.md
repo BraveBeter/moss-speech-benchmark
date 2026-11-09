@@ -22,7 +22,7 @@ python -m moss_speech_bench --phase codec-infer --config sg-fp32.json --output-d
 python -m moss_speech_bench --phase codec-infer --config sg-bf16.json --output-dir results/sg-bf16
 ```
 
-Use one fresh directory per backend/configuration. All three use offline decoding to match the public native HF `decode` API. SG BF16 applies the selected branch's `FlowBF16Scope` to FFN and attention projections; Encoder, SDPA, solver and HiFT remain FP32. This tests that precision strategy in offline reconstruction. Production streaming quality is a separate configuration and must not inherit these results automatically.
+Use one fresh directory per backend/configuration. All three use offline decoding to match the public native HF `decode` API. SG BF16 applies the selected branch's `FlowBF16Scope` to FFN and attention projections. M1 retains FP32 SDPA; M2 additionally uses BF16 SDPA Q/K/V and live bias. Encoder, noise, solver and HiFT remain FP32 in both profiles. This tests that precision strategy in offline reconstruction. Production streaming quality is a separate configuration and must not inherit these results automatically.
 
 Each backend runs its own Encoder, freezes target/prompt code ledgers and saves complete FLOAT WAVs. Native HF source is hash-verified and SG imports are forbidden in that path. Generation requires finite PCM and exactly 1920 samples per code. Failed samples remain in the planned denominator. Source/client identities, runtime versions, asset/input hashes and commands are retained.
 
