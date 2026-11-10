@@ -591,3 +591,152 @@ def test_full_flow_bf16_proof_requires_real_solver_states_and_cpu_backups():
             validate_codec_qualification(proof | patch, selected, reference, "e13-bf16-approx-v1")
     with pytest.raises(AssertionError):
         validate_codec_qualification(proof, selected, reference)
+
+    asynchronous = proof | dict(
+        optimizations=selected + ["codec-async"],
+        executions=proof["executions"] | {"codec-async": 2},
+        async_flow_slots=2,
+        async_pcm_exact=True,
+        async_bf16_flow_slots=2,
+        async_bf16_parameter_bytes=8,
+        async_fp32_cpu_backup_bytes=16,
+    )
+    selected_async = selected + ["codec-async"]
+    validate_codec_qualification(asynchronous, selected_async, reference, "e13-bf16-approx-v1")
+    for patch in [
+        dict(async_bf16_flow_slots=1),
+        dict(async_bf16_parameter_bytes=0),
+        dict(async_fp32_cpu_backup_bytes=8),
+        dict(async_pcm_exact=False),
+    ]:
+        with pytest.raises(AssertionError):
+            validate_codec_qualification(
+                asynchronous | patch, selected_async, reference, "e13-bf16-approx-v1"
+            )
+
+
+@pytest.mark.parametrize(
+    "mismatch", [None, "undeclared", "deployment", "factory", "float", "dependencies"]
+)
+def test_async_codec_requires_explicit_two_slot_qualification(tmp_path, mismatch):
+    selected = [
+        "ar-decode-graph",
+        "ar-serial-decode-graph",
+        "codec-bias-broadcast",
+        "codec-cfm-graph",
+        "codec-unready-return",
+        "codec-async",
+    ]
+    deployment = dict(
+        ar_graph=True,
+        decode_graph=True,
+        decode_graph_serial_batch=True,
+        broadcast_attention_bias=True,
+        cfm_graph_mel_length=1500,
+        codec_flow_slots=2,
+    )
+    vocoder = dict(broadcast_attention_bias=True, cfm_graph_mel_length=1500, codec_flow_slots=2)
+    if mismatch == "undeclared":
+        selected.remove("codec-async")
+    elif mismatch == "deployment":
+        deployment["codec_flow_slots"] = 1
+    elif mismatch == "factory":
+        vocoder["codec_flow_slots"] = 1
+    elif mismatch == "float":
+        vocoder["codec_flow_slots"] = 2.0
+    elif mismatch == "dependencies":
+        selected.remove("codec-unready-return")
+    path = configuration(
+        tmp_path, optimizations=selected, deployment=deployment, run_vocoder=vocoder
+    )
+    if mismatch is None:
+        config = load_suite(path)
+        cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected)
+        cuda = selected_nodes("C03", "cumulative", True, "eager-bugs", selected)
+        assert sum("async_codec_factory_defers_graph" in node for node in cpu) == 2
+        assert sum("async_vocoder_fullweights" in node for node in cuda) == 1
+        log = tmp_path / "server.log"
+        log.write_text(
+            "MOSS full decode graph replay active\nserial batch decode graph replay active batch=2\nserial batch decode graph replay active batch=4\nMOSS_CODEC_BIAS_BROADCAST_ACTIVE\n"
+        )
+        with pytest.raises(AssertionError):
+            validate_activation(config, tmp_path / "no-real-async")
+        with log.open("a") as output:
+            output.write("MOSS_CODEC_ASYNC_ACTIVE flow_slots=2 cudnn_enabled=True\n")
+        assert validate_activation(config, tmp_path / "actual-async")["status"] == "pass"
+    else:
+        with pytest.raises(ValueError):
+            load_suite(path)
+
+
+def test_async_codec_joint_proof_requires_actual_workers_and_exact_isolation():
+    selected = ["codec-bias-broadcast", "codec-cfm-graph", "codec-unready-return", "codec-async"]
+    reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
+    report = dict(
+        optimizations=selected,
+        reference=reference,
+        joint_pcm_within_frozen_tolerance=True,
+        code_ledger_exact=True,
+        request_state_isolation_exact=True,
+        rng_isolation_exact=True,
+        cleanup_exact=True,
+        executions={feature: 1 for feature in selected},
+        async_flow_slots=2,
+        async_pcm_exact=True,
+    )
+    validate_codec_qualification(report, selected, reference)
+    for name, value in [
+        ("async_flow_slots", 1),
+        ("async_pcm_exact", False),
+        ("rng_isolation_exact", False),
+    ]:
+        changed = copy.deepcopy(report)
+        changed[name] = value
+        with pytest.raises(AssertionError):
+            validate_codec_qualification(changed, selected, reference)
+    changed = copy.deepcopy(report)
+    changed["executions"]["codec-async"] = 0
+    with pytest.raises(AssertionError):
+        validate_codec_qualification(changed, selected, reference)
+
+
+def test_async_full_flow_bf16_requires_preserved_precision_and_actual_service_execution(tmp_path):
+    selected = [
+        "ar-decode-graph",
+        "ar-serial-decode-graph",
+        "codec-bias-broadcast",
+        "codec-unready-return",
+        "codec-full-flow-bf16",
+        "codec-async",
+    ]
+    deployment = dict(
+        ar_graph=True,
+        decode_graph=True,
+        decode_graph_serial_batch=True,
+        broadcast_attention_bias=True,
+        flow_precision="full_flow_bf16",
+        codec_flow_slots=2,
+    )
+    vocoder = dict(
+        broadcast_attention_bias=True, flow_precision="full_flow_bf16", codec_flow_slots=2
+    )
+    config = load_suite(
+        configuration(
+            tmp_path,
+            optimizations=selected,
+            deployment=deployment,
+            run_vocoder=vocoder,
+            precision_contract="e13-bf16-approx-v1",
+        )
+    )
+    log = tmp_path / "server.log"
+    log.write_text(
+        "full decode graph replay active\nserial batch decode graph replay active batch=2\nserial batch decode graph replay active batch=4\nMOSS_CODEC_BIAS_BROADCAST_ACTIVE\nMOSS_CODEC_FULL_FLOW_BF16_ACTIVE\nMOSS_CODEC_ASYNC_ACTIVE flow_slots=2 cudnn_enabled=True\n"
+    )
+    with pytest.raises(AssertionError, match="codec-async"):
+        validate_activation(config, tmp_path / "missing-active-precision")
+    with log.open("a") as output:
+        output.write(
+            "MOSS_CODEC_ASYNC_ACTIVE flow_slots=2 cudnn_enabled=True flow_precision=full_flow_bf16\n"
+        )
+    assert validate_activation(config, tmp_path / "actual-bf16-concurrency")["status"] == "pass"
