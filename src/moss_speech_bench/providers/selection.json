@@ -1104,7 +1104,8 @@
     "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_native_solver_and_exact_owner_restoration[False-cpu]",
     "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_native_solver_and_exact_owner_restoration[True-cpu]",
     "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_failed_entry_restores_all_parameters",
-    "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_rejects_training_and_missing_live_bias"
+    "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_rejects_training_and_missing_live_bias",
+    "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_warm_inference_position_table_restores_exactly"
   ],
   "C03-codec-full-flow-bf16": [
     "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_native_solver_and_exact_owner_restoration[False-cuda]",
