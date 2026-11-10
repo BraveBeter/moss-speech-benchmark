@@ -57,6 +57,22 @@ def speech_workload(root):
     return path
 
 
+def test_chat_audio_paths_preserve_the_declared_reference(tmp_path):
+    """Chat T2S/S2S must receive the voice reference instead of ignoring it."""
+    path = speech_workload(tmp_path)
+    config = read_json(path)
+    config["service"].update(api="chat", tasks=["t2t", "t2s", "s2t", "s2s"])
+    write_json(path, config)
+    datasets, _, _ = load_workload(path, "moss-speech", False, "quick")
+    for rows, metadata in datasets.values():
+        for row in rows:
+            if row["task"].endswith("s"):
+                assert row["payload"]["audio"]["ref_audio"].startswith("data:audio/wav;base64,")
+                assert metadata["service"]["reference_sha256"]
+            else:
+                assert "audio" not in row["payload"]
+
+
 @pytest_asyncio.fixture
 async def speech_server():
     state = dict(payloads=[], active=0, peak=0)

@@ -166,6 +166,8 @@ def prepare_dataset(
             payload["messages"].insert(0, {"role": "system", "content": prompt["system"]})
         if row_task.endswith("s") and stream:
             payload["audio"] = {"format": "pcm"}
+        if row_task.endswith("s") and service and service.get("reference_data"):
+            payload.setdefault("audio", {})["ref_audio"] = service["reference_data"]
         if service and service["api"] == "speech":
             if row_task != "t2s" or stream:
                 raise ValueError("Speech API supports only non-streaming t2s")

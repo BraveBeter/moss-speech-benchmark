@@ -29,6 +29,7 @@ def service_config(spec, root, stream):
             raise ValueError("Speech transport requires tasks=[t2s] and streaming=false")
         if spec.get("system") not in (DEMO_AUDIO_SYSTEM, NATIVE_AUDIO_SYSTEM):
             raise ValueError("Named speech QA requires an official audio system prompt")
+    if spec["api"] == "speech" or "reference_audio" in spec:
         path = (Path(root) / spec["reference_audio"]).resolve()
         raw = path.read_bytes()
         if not raw:
