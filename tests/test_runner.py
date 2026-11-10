@@ -359,9 +359,21 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
 
     audio = summarize(
         [
-            {"is_success": True, "audio_duration_s": 2, "latency_s": 1},
-            {"is_success": True, "audio_duration_s": 4, "latency_s": 1},
-            {"is_success": False, "audio_duration_s": 99, "latency_s": 1},
+            {
+                "is_success": True,
+                "audio_duration_s": 2,
+                "latency_s": 1,
+                "rtf": 0.5,
+                "audio_ttfp_s": 0.2,
+            },
+            {
+                "is_success": True,
+                "audio_duration_s": 4,
+                "latency_s": 1,
+                "rtf": 0.25,
+                "audio_ttfp_s": 0.8,
+            },
+            {"is_success": False, "audio_duration_s": 99, "latency_s": 1, "audio_ttfp_s": 99},
         ],
         3,
         5,
@@ -398,8 +410,22 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
     assert rows[0]["audio-s/s"] == "1.2" and rows[0]["QPS"] == "0.4"
     assert rows[0]["成功/全部"] == "2/3" and rows[0]["并发"] == "4"
     assert rows[0]["模态/语言"] == "S2S / EN"
+    assert rows[0]["TTFA Mean (s)"] == "0.5" and rows[0]["TTFA P95 (s)"] == "0.77"
+    assert rows[0]["RTF Mean"] == "0.375" and rows[0]["RTF P95"] == "0.4875"
     assert rows[1]["数据集"] == "[custom-json/t2t-en](inputs/t2t-en.jsonl)"
     assert rows[1]["audio-s/s"] == "N/A" and rows[1]["QPS"] == "0.5"
+    assert rows[1]["TTFA Mean (s)"] == rows[1]["TTFA P95 (s)"] == "N/A"
+    averages = dict(
+        audio,
+        dataset="opaque",
+        concurrency=4,
+        valid_repeats=3,
+        expected_repeats=3,
+    )
+    average_table = performance_table(manifest, {"opaque-c4": averages}, averages=True)
+    assert "TTFA Mean (s)（轮均）" in average_table[0]
+    assert "TTFA P95 (s)（轮均）" in average_table[0]
+    assert "RTF Mean（轮均）" in average_table[0] and "RTF P95（轮均）" in average_table[0]
 
 
 def test_correctness_summary_validates_binding_and_reports_missing_or_incomplete(tmp_path):

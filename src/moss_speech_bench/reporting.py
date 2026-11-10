@@ -284,14 +284,16 @@ def performance_table(manifest, performance, *, averages=False):
     columns = (
         ("latency_median_s", "E2E P50 (s)"),
         ("text_ttft_p95_s", "TTFT P95 (s)"),
+        ("audio_ttfp_mean_s", "TTFA Mean (s)"),
         ("audio_ttfp_p95_s", "TTFA P95 (s)"),
         ("rtf_mean", "RTF Mean"),
+        ("rtf_p95", "RTF P95"),
         ("audio_throughput_s_per_s", "audio-s/s"),
         ("throughput_qps", "QPS"),
     )
     lines = [
         "| 数据集 | 模态/语言 | 并发 | 轮次 | 成功/全部 | "
-        + " | ".join(label for _, label in columns)
+        + " | ".join(label + ("（轮均）" if averages else "") for _, label in columns)
         + " |",
         "|---|---|---:|---:|---:|" + "---:|" * len(columns),
     ]
@@ -405,6 +407,7 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
         ),
         "audio-s/s = 成功请求生成音频总秒数 / 本组墙钟秒数；QPS = 成功请求数 / 本组墙钟秒数。无音频或计时不完整记 N/A。",
         "E2E为完整响应耗时；TTFT为首个非空文本；TTFA为首个非空PCM（可能含静音）。分位数逐组计算。",
+        "RTF Mean与TTFA Mean是本组成功且指标有效请求的算术平均；RTF P95与TTFA P95是这些请求的95分位数。RTF先逐请求计算E2E/实际PCM时长，再求统计量。",
         "custom-json表示自定义固定样例，数据集链接指向本run冻结输入；原始测量编号保留在performance.json。",
     ]
     for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
@@ -419,6 +422,7 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
                 "",
                 "仅全部轮次计时完整且所有请求成功时给出均值；缺轮/失败/超时为 N/A。",
                 "P50/P95 均值为各轮分位数的算术平均，不是合并请求的分位数；QPS/audio-s/s 先逐轮计算再平均。",
+                "标为“轮均”的Mean列平均各轮Mean，P95列平均各轮P95；收益对比须写明具体统计量与轮次/数据集的加权方式。",
                 "预热在每轮正式计时前完成，不计入性能或质量分母；记录见 [warmup.json](warmup.json)。",
             ]
         )
