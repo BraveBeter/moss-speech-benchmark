@@ -37,6 +37,7 @@ FEATURES = tuple(
             "codec-resident-bf16",
             "codec-storage-bf16",
             "codec-encoder-bf16",
+            "codec-full-flow-bf16",
             "codec-score-release",
             "direct-lt",
             "context-startup-schedule",
@@ -50,6 +51,7 @@ STREAMING_CODEC_FEATURES = (
     "codec-resident-bf16",
     "codec-storage-bf16",
     "codec-encoder-bf16",
+    "codec-full-flow-bf16",
     "codec-bias-broadcast",
     "codec-cfm-graph",
     "direct-lt",
@@ -70,7 +72,7 @@ def validate_codec_qualification(report, selected, reference, precision_contract
         return
     assert set(report["optimizations"]) == expected
     assert report["reference"] == reference, "Cumulative codec used another reference"
-    if "codec-flow-bf16" in expected:
+    if {"codec-flow-bf16", "codec-full-flow-bf16"} & expected:
         assert precision_contract == "e13-bf16-approx-v1"
         assert report["precision_contract"] == precision_contract
         assert report["joint_pcm_within_frozen_tolerance"] is False
@@ -105,6 +107,14 @@ def validate_codec_qualification(report, selected, reference, precision_contract
             report["encoder_bf16_executions"] > 0
             and report["encoder_bf16_convolution_executions"] > 0
         )
+
+    if "codec-full-flow-bf16" in expected:
+        assert report["full_flow_bf16"] is True
+        assert report["bf16_solver_state_exact_dtype"] is True
+        assert report["bf16_sdpa_mask_broadcast"] is True
+        for field in ("bf16_solver_steps", "full_flow_bf16_parameter_bytes"):
+            assert type(report[field]) is int and report[field] > 0
+        assert report["full_flow_cpu_backup_bytes"] == 2 * report["full_flow_bf16_parameter_bytes"]
 
 
 def validate_ar_qualification(report, selected):
@@ -197,7 +207,7 @@ def validate(config):
     elif length is not None:
         raise ValueError("Undeclared cumulative CFM graph")
     precision = deployment.get("flow_precision")
-    if "codec-flow-bf16" in selected:
+    if {"codec-flow-bf16", "codec-full-flow-bf16"} & set(selected):
         if (
             config.get("precision_contract") != "e13-bf16-approx-v1"
             or precision
@@ -209,6 +219,7 @@ def validate(config):
                 "ffn_attention_sdpa_resident",
                 "ffn_attention_sdpa_storage",
                 "ffn_attention_sdpa_storage_encoder",
+                "full_flow_bf16",
             )
             or config.get("run_vocoder", {}).get("flow_precision") != precision
             or "codec-cfm-graph" in selected
@@ -246,6 +257,17 @@ def validate(config):
         raise ValueError("BF16 parameter storage requires explicit activation and CPU backup proof")
     if ("codec-encoder-bf16" in selected) != (precision == "ffn_attention_sdpa_storage_encoder"):
         raise ValueError("Flow encoder BF16 requires explicit activation and boundary proof")
+
+    if ("codec-full-flow-bf16" in selected) != (precision == "full_flow_bf16"):
+        raise ValueError("Full Flow BF16 requires its explicit solver and storage proof")
+    if precision == "full_flow_bf16" and {
+        "codec-flow-bf16",
+        "codec-sdpa-bf16",
+        "codec-resident-bf16",
+        "codec-storage-bf16",
+        "codec-encoder-bf16",
+    } & set(selected):
+        raise ValueError("Full Flow and component BF16 profiles are independent")
     schedule = deployment.get("stream_startup_schedule")
     if "context-startup-schedule" in selected:
         if schedule != "6_8_align25" or "context-small-first" in selected:

@@ -50,6 +50,7 @@ def load_config(path):
             "ffn_attention_sdpa_resident",
             "ffn_attention_sdpa_storage",
             "ffn_attention_sdpa_storage_encoder",
+            "full_flow_bf16",
         )
         if config["backend"] == "sg-bf16"
         else (None,)

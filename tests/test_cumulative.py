@@ -510,3 +510,84 @@ def test_encoder_bf16_proof_requires_real_execution_and_fp32_boundary():
     ]:
         with pytest.raises(AssertionError):
             validate_codec_qualification(report | patch, selected, reference, "e13-bf16-approx-v1")
+
+
+def test_full_flow_bf16_requires_its_own_explicit_contract_and_solver_proof(tmp_path):
+    features = [
+        "ar-decode-graph",
+        "ar-serial-decode-graph",
+        "codec-bias-broadcast",
+        "codec-unready-return",
+        "codec-full-flow-bf16",
+    ]
+    changes = dict(
+        optimizations=features,
+        precision_contract="e13-bf16-approx-v1",
+        deployment=dict(
+            ar_graph=True,
+            decode_graph=True,
+            decode_graph_serial_batch=True,
+            broadcast_attention_bias=True,
+            flow_precision="full_flow_bf16",
+        ),
+        run_vocoder=dict(broadcast_attention_bias=True, flow_precision="full_flow_bf16"),
+    )
+    config = load_suite(configuration(tmp_path, **changes))
+    for gate in ("C01", "C03"):
+        nodes = selected_nodes(
+            gate, "cumulative", True, "eager-bugs", config["optimizations"], "independent"
+        )
+        assert any("test_full_flow_precision.py" in node for node in nodes)
+        assert len(nodes) == len(set(nodes))
+    for patch in [
+        dict(precision_contract=None),
+        dict(optimizations=[feature for feature in features if feature != "codec-full-flow-bf16"]),
+        dict(optimizations=features + ["codec-flow-bf16"]),
+        dict(
+            run_vocoder=dict(
+                broadcast_attention_bias=True, flow_precision="ffn_attention_sdpa_storage"
+            )
+        ),
+    ]:
+        with pytest.raises(ValueError):
+            load_suite(configuration(tmp_path, **(changes | patch)))
+
+
+def test_full_flow_bf16_proof_requires_real_solver_states_and_cpu_backups():
+    selected = ["codec-bias-broadcast", "codec-unready-return", "codec-full-flow-bf16"]
+    reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
+    proof = dict(
+        optimizations=selected,
+        reference=reference,
+        precision_contract="e13-bf16-approx-v1",
+        joint_pcm_within_frozen_tolerance=False,
+        same_precision_pcm_exact=True,
+        cross_precision_statistics=dict(
+            pcm_max_abs=1.0, pcm_relative_l2=1.0, pcm_tensor_cosine=0.0
+        ),
+        code_ledger_exact=True,
+        request_state_isolation_exact=True,
+        rng_isolation_exact=True,
+        cleanup_exact=True,
+        executions={feature: 10 for feature in selected},
+        full_flow_bf16=True,
+        bf16_solver_steps=10,
+        bf16_solver_state_exact_dtype=True,
+        bf16_sdpa_mask_broadcast=True,
+        full_flow_bf16_parameter_bytes=4,
+        full_flow_cpu_backup_bytes=8,
+    )
+    validate_codec_qualification(proof, selected, reference, "e13-bf16-approx-v1")
+    for patch in [
+        dict(full_flow_bf16=False),
+        dict(bf16_solver_steps=0),
+        dict(bf16_solver_state_exact_dtype=False),
+        dict(bf16_sdpa_mask_broadcast=False),
+        dict(full_flow_bf16_parameter_bytes=0),
+        dict(full_flow_cpu_backup_bytes=4),
+        dict(same_precision_pcm_exact=False),
+    ]:
+        with pytest.raises(AssertionError):
+            validate_codec_qualification(proof | patch, selected, reference, "e13-bf16-approx-v1")
+    with pytest.raises(AssertionError):
+        validate_codec_qualification(proof, selected, reference)

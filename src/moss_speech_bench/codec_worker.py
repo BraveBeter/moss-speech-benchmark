@@ -39,6 +39,7 @@ def infer(config, root):
     )
     write_json(root / "generation.json", report)
     scopes = []
+    full_scope = None
     with ExitStack() as contexts:
         if config["backend"] == "hf-native":
             source = Path(config["hf_source_root"])
@@ -69,7 +70,13 @@ def infer(config, root):
                 )
             )
             assert codec.decoder is not None
-            if config["backend"] == "sg-bf16":
+            if config["backend"] == "sg-bf16" and config["flow_precision"] == "full_flow_bf16":
+                from sglang_omni.models.moss_speech.components.full_flow_precision import (
+                    FullFlowBF16Scope,
+                )
+
+                full_scope = contexts.enter_context(FullFlowBF16Scope(codec.decoder.flow))
+            elif config["backend"] == "sg-bf16":
                 from sglang_omni.models.moss_speech.components.flow_precision import FlowBF16Scope
 
                 for stage in ("ffn", "attention"):
@@ -270,6 +277,39 @@ def infer(config, root):
                 ),
                 encoder_bf16_convolution_executions=encoder_scope.bf16_convolution_executions,
                 encoder_fp32_boundaries=True,
+            )
+        if full_scope is not None:
+            flow = codec.decoder.flow
+            assert all(parameter.dtype is torch.bfloat16 for parameter in flow.parameters())
+            assert all(
+                parameter.dtype is torch.float32 for parameter in codec.decoder.hift.parameters()
+            )
+            assert flow.decoder.solver_dtype is torch.bfloat16
+            assert flow.decoder.solver_state_dtypes == [torch.bfloat16] * 10
+            assert flow.decoder.estimator.time_embeddings.last_compute_dtype is torch.bfloat16
+            assert all(
+                state.backup.device.type == "cpu" and state.backup.dtype is torch.float32
+                for state in full_scope.parameters
+            )
+            assert all(
+                processor.bf16_sdpa_calls == processor.broadcast_calls > 0
+                and processor.fallback_calls == 0
+                and processor.last_head_stride == 0
+                and processor.last_sdpa_dtype is torch.bfloat16
+                for processor in full_scope.processors
+            )
+            assert flow.decoder.solver_precision_steps > 0
+            report.update(
+                full_flow_bf16=True,
+                bf16_solver_state_exact_dtype=True,
+                bf16_solver_steps=flow.decoder.solver_precision_steps,
+                full_flow_bf16_parameter_bytes=full_scope.bf16_parameter_bytes,
+                full_flow_cpu_backup_bytes=full_scope.fp32_cpu_backup_bytes,
+                bf16_sdpa_executions=sum(
+                    processor.bf16_sdpa_calls for processor in full_scope.processors
+                ),
+                bf16_sdpa_mask_broadcast=True,
+                canonical_noise_dtype=str(flow.decoder.rand_noise.dtype),
             )
         report["status"] = (
             "complete" if all(row["status"] == "complete" for row in report["rows"]) else "partial"
