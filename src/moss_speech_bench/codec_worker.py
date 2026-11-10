@@ -81,21 +81,34 @@ def infer(config, root):
                             "ffn_attention_sdpa",
                             "ffn_attention_sdpa_resident",
                             "ffn_attention_sdpa_storage",
+                            "ffn_attention_sdpa_storage_encoder",
                         )
                         else {}
                     )
                     if config["flow_precision"] in (
                         "ffn_attention_sdpa_resident",
                         "ffn_attention_sdpa_storage",
+                        "ffn_attention_sdpa_storage_encoder",
                     ):
                         options["resident_weights"] = True
-                    if config["flow_precision"] == "ffn_attention_sdpa_storage":
+                    if config["flow_precision"] in (
+                        "ffn_attention_sdpa_storage",
+                        "ffn_attention_sdpa_storage_encoder",
+                    ):
                         options["store_bf16_parameters"] = True
                     scopes.append(
                         contexts.enter_context(
                             FlowBF16Scope(codec.decoder.flow.decoder.estimator, stage, **options)
                         )
                     )
+            if config.get("flow_precision") == "ffn_attention_sdpa_storage_encoder":
+                from sglang_omni.models.moss_speech.components.encoder_precision import (
+                    FlowEncoderBF16Scope,
+                )
+
+                scopes.append(
+                    contexts.enter_context(FlowEncoderBF16Scope(codec.decoder.flow.encoder, "full"))
+                )
             report["loaded_sources"]["sg_codec"] = dict(
                 path=inspect.getfile(type(codec)), sha256=file_hash(inspect.getfile(type(codec)))
             )
@@ -173,7 +186,8 @@ def infer(config, root):
             for parameter in codec.decoder.parameters():
                 expected_dtype = (
                     torch.bfloat16
-                    if config["flow_precision"] == "ffn_attention_sdpa_storage"
+                    if config["flow_precision"]
+                    in ("ffn_attention_sdpa_storage", "ffn_attention_sdpa_storage_encoder")
                     and id(parameter) in selected_parameters
                     else torch.float32
                 )
@@ -182,6 +196,7 @@ def infer(config, root):
             "ffn_attention_sdpa",
             "ffn_attention_sdpa_resident",
             "ffn_attention_sdpa_storage",
+            "ffn_attention_sdpa_storage_encoder",
         ):
             processors = [processor for scope in scopes for processor in scope.sdpa_processors]
             assert processors and all(
@@ -196,6 +211,7 @@ def infer(config, root):
         if config.get("flow_precision") in (
             "ffn_attention_sdpa_resident",
             "ffn_attention_sdpa_storage",
+            "ffn_attention_sdpa_storage_encoder",
         ):
             operators = [operator for scope in scopes for operator in scope.operators]
             assert operators and all(
@@ -211,7 +227,10 @@ def infer(config, root):
             report["resident_parameter_copies"] = sum(
                 operator.forward.parameter_copies for operator in operators
             )
-        if config.get("flow_precision") == "ffn_attention_sdpa_storage":
+        if config.get("flow_precision") in (
+            "ffn_attention_sdpa_storage",
+            "ffn_attention_sdpa_storage_encoder",
+        ):
             assert all(
                 operator.forward.store_bf16_parameters
                 and operator.module.weight.data_ptr() == operator.forward.resident_weight.data_ptr()
@@ -227,6 +246,31 @@ def infer(config, root):
                 operator.forward.cpu_backup_parameter_bytes for operator in operators
             )
             assert report["fp32_cpu_backup_bytes"] == 2 * report["resident_weight_bytes"]
+        if config.get("flow_precision") == "ffn_attention_sdpa_storage_encoder":
+            encoder_scope = scopes[-1]
+            assert (
+                encoder_scope.forward.executions > 0
+                and encoder_scope.forward.last_output_dtype is torch.float32
+                and encoder_scope.forward.last_mask_dtype is torch.bool
+            )
+            assert (
+                encoder_scope.convolution_executions
+                == encoder_scope.bf16_convolution_executions
+                > 0
+            )
+            assert all(
+                operator.forward.executions > 0
+                and operator.forward.last_compute_dtype is torch.float32
+                for operator in encoder_scope.fp32_operators
+            )
+            report.update(
+                bf16_flow_encoder=True,
+                encoder_bf16_executions=sum(
+                    operator.forward.bf16_executions for operator in encoder_scope.operators
+                ),
+                encoder_bf16_convolution_executions=encoder_scope.bf16_convolution_executions,
+                encoder_fp32_boundaries=True,
+            )
         report["status"] = (
             "complete" if all(row["status"] == "complete" for row in report["rows"]) else "partial"
         )

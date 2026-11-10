@@ -1085,5 +1085,19 @@
   ],
   "C03-codec-storage-bf16": [
     "tests/unit_test/moss_speech/test_codec.py::test_bf16_parameter_storage_matches_resident_and_restores_exact_weights[cuda]"
+  ],
+  "C01-codec-encoder-bf16": [
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_preserves_masks_rng_and_exact_fp32_restoration[cpu-linear]",
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_preserves_masks_rng_and_exact_fp32_restoration[cpu-attention]",
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_preserves_masks_rng_and_exact_fp32_restoration[cpu-full]",
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_partial_entry_restores_parameters_and_hooks",
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_rejects_nested_scopes_training_and_gradients",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_owner_close_and_reactivate_keeps_same_precision[ffn_attention_sdpa_storage_encoder]",
+    "tests/unit_test/moss_speech/test_codec.py::test_bf16_flow_rejects_unqualified_fp32_graph_combination[ffn_attention_sdpa_storage_encoder]"
+  ],
+  "C03-codec-encoder-bf16": [
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_preserves_masks_rng_and_exact_fp32_restoration[cuda-linear]",
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_preserves_masks_rng_and_exact_fp32_restoration[cuda-attention]",
+    "tests/unit_test/moss_speech/test_encoder_precision.py::test_encoder_bf16_preserves_masks_rng_and_exact_fp32_restoration[cuda-full]"
   ]
 }

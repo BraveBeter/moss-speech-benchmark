@@ -307,7 +307,13 @@ def test_distinct_parameterizations_of_one_factory_keep_every_fixed_case(reverse
 
 @pytest.mark.parametrize(
     "precision",
-    ["ffn", "ffn_attention_sdpa", "ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage"],
+    [
+        "ffn",
+        "ffn_attention_sdpa",
+        "ffn_attention_sdpa_resident",
+        "ffn_attention_sdpa_storage",
+        "ffn_attention_sdpa_storage_encoder",
+    ],
 )
 def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path, precision):
     changes = dict(
@@ -332,12 +338,19 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
         "ffn_attention_sdpa",
         "ffn_attention_sdpa_resident",
         "ffn_attention_sdpa_storage",
+        "ffn_attention_sdpa_storage_encoder",
     ):
         changes["optimizations"].append("codec-sdpa-bf16")
-    if precision in ("ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage"):
+    if precision in (
+        "ffn_attention_sdpa_resident",
+        "ffn_attention_sdpa_storage",
+        "ffn_attention_sdpa_storage_encoder",
+    ):
         changes["optimizations"].append("codec-resident-bf16")
-    if precision == "ffn_attention_sdpa_storage":
+    if precision in ("ffn_attention_sdpa_storage", "ffn_attention_sdpa_storage_encoder"):
         changes["optimizations"].append("codec-storage-bf16")
+    if precision == "ffn_attention_sdpa_storage_encoder":
+        changes["optimizations"].append("codec-encoder-bf16")
     load_suite(configuration(tmp_path, **changes))
     for patch in [
         dict(precision_contract=None),
@@ -349,7 +362,12 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
                 feature for feature in changes["optimizations"] if feature != "codec-resident-bf16"
             ]
         )
-        if precision in ("ffn_attention_sdpa_resident", "ffn_attention_sdpa_storage")
+        if precision
+        in (
+            "ffn_attention_sdpa_resident",
+            "ffn_attention_sdpa_storage",
+            "ffn_attention_sdpa_storage_encoder",
+        )
         else dict(optimizations=changes["optimizations"] + ["codec-resident-bf16"]),
         dict(
             optimizations=[
@@ -364,10 +382,16 @@ def test_bf16_profile_requires_versioned_contract_and_actual_activation(tmp_path
 
 
 @pytest.mark.parametrize(
-    "sdpa,resident,storage",
-    [(False, False, False), (True, False, False), (True, True, False), (True, True, True)],
+    "sdpa,resident,storage,encoder",
+    [
+        (False, False, False, False),
+        (True, False, False, False),
+        (True, True, False, False),
+        (True, True, True, False),
+        (True, True, True, True),
+    ],
 )
-def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident, storage):
+def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident, storage, encoder):
     selected = ["codec-bias-broadcast", "codec-unready-return", "codec-flow-bf16"]
     if sdpa:
         selected.append("codec-sdpa-bf16")
@@ -375,6 +399,8 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident
         selected.append("codec-resident-bf16")
     if storage:
         selected.append("codec-storage-bf16")
+    if encoder:
+        selected.append("codec-encoder-bf16")
     reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
     report = dict(
         optimizations=selected,
@@ -394,6 +420,10 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident
         bf16_weight_residency=resident,
         resident_weight_bytes=4 if resident else 0,
         resident_parameter_copies=1 if resident else 0,
+        bf16_flow_encoder=encoder,
+        encoder_fp32_boundaries=encoder,
+        encoder_bf16_executions=1 if encoder else 0,
+        encoder_bf16_convolution_executions=1 if encoder else 0,
         bf16_parameter_storage=storage,
         fp32_cpu_backup_bytes=8 if storage else 0,
     )
@@ -433,3 +463,50 @@ def test_bf16_structural_proof_cannot_claim_old_fp32_numeric_pass(sdpa, resident
                 validate_codec_qualification(
                     report | patch, selected, reference, "e13-bf16-approx-v1"
                 )
+
+
+def test_encoder_bf16_proof_requires_real_execution_and_fp32_boundary():
+    reference = dict(report_sha256="a" * 64, tensors_sha256="b" * 64, pcm_atol=1e-5, pcm_rtol=1e-5)
+    selected = [
+        "codec-unready-return",
+        "codec-bias-broadcast",
+        "codec-flow-bf16",
+        "codec-sdpa-bf16",
+        "codec-resident-bf16",
+        "codec-storage-bf16",
+        "codec-encoder-bf16",
+    ]
+    report = dict(
+        optimizations=selected,
+        reference=reference,
+        precision_contract="e13-bf16-approx-v1",
+        joint_pcm_within_frozen_tolerance=False,
+        same_precision_pcm_exact=True,
+        cross_precision_statistics=dict(
+            pcm_max_abs=0.9, pcm_relative_l2=0.8, pcm_tensor_cosine=0.7
+        ),
+        code_ledger_exact=True,
+        request_state_isolation_exact=True,
+        rng_isolation_exact=True,
+        cleanup_exact=True,
+        executions={feature: 1 for feature in selected},
+        bf16_sdpa_mask_broadcast=True,
+        bf16_weight_residency=True,
+        resident_weight_bytes=4,
+        resident_parameter_copies=1,
+        bf16_parameter_storage=True,
+        fp32_cpu_backup_bytes=8,
+        bf16_flow_encoder=True,
+        encoder_fp32_boundaries=True,
+        encoder_bf16_executions=1,
+        encoder_bf16_convolution_executions=1,
+    )
+    validate_codec_qualification(report, selected, reference, "e13-bf16-approx-v1")
+    for patch in [
+        dict(bf16_flow_encoder=False),
+        dict(encoder_fp32_boundaries=False),
+        dict(encoder_bf16_executions=0),
+        dict(encoder_bf16_convolution_executions=0),
+    ]:
+        with pytest.raises(AssertionError):
+            validate_codec_qualification(report | patch, selected, reference, "e13-bf16-approx-v1")

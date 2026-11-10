@@ -62,6 +62,7 @@ def test_codec_pairs_use_actual_target_text_and_each_reference(tmp_path):
         "ffn_attention_sdpa",
         "ffn_attention_sdpa_resident",
         "ffn_attention_sdpa_storage",
+        "ffn_attention_sdpa_storage_encoder",
     ],
 )
 def test_codec_bf16_profiles_require_explicit_clean_source(tmp_path, monkeypatch, precision):
