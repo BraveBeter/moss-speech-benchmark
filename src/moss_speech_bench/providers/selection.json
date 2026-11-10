@@ -1117,9 +1117,12 @@
     "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[audio_vocoder-codec_flow_slots-True]",
     "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[audio_vocoder-codec_flow_slots--1]",
     "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[audio_vocoder-codec_flow_slots-3]",
-    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading"
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading[full_flow_bf16-1500]",
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading[ffn-None]",
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading[ffn_attention_sdpa_storage-None]"
   ],
   "C03-codec-async": [
-    "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort"
+    "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort[fp32]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort[full-bf16]"
   ]
 }

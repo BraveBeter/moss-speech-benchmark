@@ -654,7 +654,7 @@ def test_async_codec_requires_explicit_two_slot_qualification(tmp_path, mismatch
         cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected)
         cuda = selected_nodes("C03", "cumulative", True, "eager-bugs", selected)
         assert sum("async_codec_factory_defers_graph" in node for node in cpu) == 2
-        assert sum("async_vocoder_fullweights" in node for node in cuda) == 1
+        assert sum("async_vocoder_fullweights" in node for node in cuda) == 2
         log = tmp_path / "server.log"
         log.write_text(
             "MOSS full decode graph replay active\nserial batch decode graph replay active batch=2\nserial batch decode graph replay active batch=4\nMOSS_CODEC_BIAS_BROADCAST_ACTIVE\n"
@@ -740,3 +740,17 @@ def test_async_full_flow_bf16_requires_preserved_precision_and_actual_service_ex
             "MOSS_CODEC_ASYNC_ACTIVE flow_slots=2 cudnn_enabled=True flow_precision=full_flow_bf16\n"
         )
     assert validate_activation(config, tmp_path / "actual-bf16-concurrency")["status"] == "pass"
+
+
+def test_async_parameterized_checks_are_enumerated_in_the_frozen_selection():
+    selection = json.loads(
+        (Path(selection_module.__file__).with_name("selection.json")).read_text()
+    )
+    guard = "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading"
+    stream = "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort"
+    assert guard not in selection["C01-codec-async"]
+    assert {
+        guard + "[" + key + "]"
+        for key in ["full_flow_bf16-1500", "ffn-None", "ffn_attention_sdpa_storage-None"]
+    } <= set(selection["C01-codec-async"])
+    assert set(selection["C03-codec-async"]) == {stream + "[fp32]", stream + "[full-bf16]"}
