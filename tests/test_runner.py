@@ -95,7 +95,7 @@ async def test_contract_rejects_subset_and_unsupported_score(server, tmp_path):
         await run(args(config, url, tmp_path / "out"))
 
 
-async def test_baseline_contract_and_result_tampering(server, tmp_path):
+async def test_baseline_contract_and_result_tampering(server, tmp_path, monkeypatch):
     url, _ = server
     config = workload(tmp_path)
     metadata = tmp_path / "deployment.json"
@@ -110,6 +110,29 @@ async def test_baseline_contract_and_result_tampering(server, tmp_path):
     report(a.output_dir, tmp_path / "base", ["deployment.settings.graph"])
     comparison = read_json(a.output_dir / "comparison.json")
     assert comparison["compatible"] and comparison["cells"]
+    assert comparison["gain_metrics"] == ["audio_ttfp_p95_s", "rtf_p95"]
+    markdown = (a.output_dir / "comparison.md").read_text()
+    gain_rows = [line for line in markdown.splitlines() if line.startswith("| ")][1:]
+    assert {line.split("|")[2].strip() for line in gain_rows} == {"TTFA P95 (s)", "RTF P95"}
+    assert any("rtf_mean" in cell for cell in comparison["cells"].values())
+    from moss_speech_bench import reporting
+
+    original_collect = reporting.collect_cell
+
+    def missing_p95(*args, **kwargs):
+        rows, metrics = original_collect(*args, **kwargs)
+        return rows, dict(metrics, audio_ttfp_p95_s=None, rtf_p95=None)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(reporting, "collect_cell", missing_p95)
+        report(a.output_dir, tmp_path / "base", ["deployment.settings.graph"])
+        diagnostic = read_json(a.output_dir / "comparison.json")
+        assert any("rtf_mean" in cell for cell in diagnostic["cells"].values())
+        assert not [
+            line
+            for line in (a.output_dir / "comparison.md").read_text().splitlines()
+            if line.startswith("| ") and not line.startswith("| Cell")
+        ]
     result = next(a.output_dir.glob("cells/**/outputs/*.result.json"))
     obj = read_json(result)
     obj["latency_s"] = 999
@@ -359,9 +382,21 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
 
     audio = summarize(
         [
-            {"is_success": True, "audio_duration_s": 2, "latency_s": 1},
-            {"is_success": True, "audio_duration_s": 4, "latency_s": 1},
-            {"is_success": False, "audio_duration_s": 99, "latency_s": 1},
+            {
+                "is_success": True,
+                "audio_duration_s": 2,
+                "latency_s": 1,
+                "rtf": 0.5,
+                "audio_ttfp_s": 0.2,
+            },
+            {
+                "is_success": True,
+                "audio_duration_s": 4,
+                "latency_s": 1,
+                "rtf": 0.25,
+                "audio_ttfp_s": 0.8,
+            },
+            {"is_success": False, "audio_duration_s": 99, "latency_s": 1, "audio_ttfp_s": 99},
         ],
         3,
         5,
@@ -398,8 +433,22 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
     assert rows[0]["audio-s/s"] == "1.2" and rows[0]["QPS"] == "0.4"
     assert rows[0]["成功/全部"] == "2/3" and rows[0]["并发"] == "4"
     assert rows[0]["模态/语言"] == "S2S / EN"
+    assert rows[0]["TTFA Mean (s)"] == "0.5" and rows[0]["TTFA P95 (s)"] == "0.77"
+    assert rows[0]["RTF Mean"] == "0.375" and rows[0]["RTF P95"] == "0.4875"
     assert rows[1]["数据集"] == "[custom-json/t2t-en](inputs/t2t-en.jsonl)"
     assert rows[1]["audio-s/s"] == "N/A" and rows[1]["QPS"] == "0.5"
+    assert rows[1]["TTFA Mean (s)"] == rows[1]["TTFA P95 (s)"] == "N/A"
+    averages = dict(
+        audio,
+        dataset="opaque",
+        concurrency=4,
+        valid_repeats=3,
+        expected_repeats=3,
+    )
+    average_table = performance_table(manifest, {"opaque-c4": averages}, averages=True)
+    assert "TTFA Mean (s)（轮均）" in average_table[0]
+    assert "TTFA P95 (s)（轮均）" in average_table[0]
+    assert "RTF Mean（轮均）" in average_table[0] and "RTF P95（轮均）" in average_table[0]
 
 
 def test_correctness_summary_validates_binding_and_reports_missing_or_incomplete(tmp_path):
