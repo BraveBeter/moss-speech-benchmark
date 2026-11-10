@@ -95,7 +95,7 @@ async def test_contract_rejects_subset_and_unsupported_score(server, tmp_path):
         await run(args(config, url, tmp_path / "out"))
 
 
-async def test_baseline_contract_and_result_tampering(server, tmp_path):
+async def test_baseline_contract_and_result_tampering(server, tmp_path, monkeypatch):
     url, _ = server
     config = workload(tmp_path)
     metadata = tmp_path / "deployment.json"
@@ -110,6 +110,29 @@ async def test_baseline_contract_and_result_tampering(server, tmp_path):
     report(a.output_dir, tmp_path / "base", ["deployment.settings.graph"])
     comparison = read_json(a.output_dir / "comparison.json")
     assert comparison["compatible"] and comparison["cells"]
+    assert comparison["gain_metrics"] == ["audio_ttfp_p95_s", "rtf_p95"]
+    markdown = (a.output_dir / "comparison.md").read_text()
+    gain_rows = [line for line in markdown.splitlines() if line.startswith("| ")][1:]
+    assert {line.split("|")[2].strip() for line in gain_rows} == {"TTFA P95 (s)", "RTF P95"}
+    assert any("rtf_mean" in cell for cell in comparison["cells"].values())
+    from moss_speech_bench import reporting
+
+    original_collect = reporting.collect_cell
+
+    def missing_p95(*args, **kwargs):
+        rows, metrics = original_collect(*args, **kwargs)
+        return rows, dict(metrics, audio_ttfp_p95_s=None, rtf_p95=None)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(reporting, "collect_cell", missing_p95)
+        report(a.output_dir, tmp_path / "base", ["deployment.settings.graph"])
+        diagnostic = read_json(a.output_dir / "comparison.json")
+        assert any("rtf_mean" in cell for cell in diagnostic["cells"].values())
+        assert not [
+            line
+            for line in (a.output_dir / "comparison.md").read_text().splitlines()
+            if line.startswith("| ") and not line.startswith("| Cell")
+        ]
     result = next(a.output_dir.glob("cells/**/outputs/*.result.json"))
     obj = read_json(result)
     obj["latency_s"] = 999
