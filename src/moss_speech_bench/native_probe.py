@@ -96,9 +96,10 @@ def ar(config, output):
             if bound["teacher"] and step < len(config["teacher_rows"]):
                 row = tuple(config["teacher_rows"][step])
                 native.output_rows[-1] = row
-                native.pending_feedback_queue[-1] = runner.rows_to_embeddings(
-                    torch.tensor([row], dtype=torch.long)
-                )[0].detach()
+                if config.get("decode_input_format") != "token_rows":
+                    native.pending_feedback_queue[-1] = runner.rows_to_embeddings(
+                        torch.tensor([row], dtype=torch.long)
+                    )[0].detach()
                 native.finished = False
                 native.stop_reason = None
                 selected[index] = row_selected_token(row)
