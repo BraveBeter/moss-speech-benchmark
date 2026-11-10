@@ -27,6 +27,8 @@ METRICS = (
     "rtf_median",
     "rtf_p95",
     "rtf_p99",
+    "max_playback_underrun_max_s",
+    "max_playback_underrun_p95_s",
     "throughput_qps",
     "audio_throughput_s_per_s",
     "output_throughput",
@@ -47,8 +49,14 @@ def summarize(rows, expected, wall_s):
         for row in rows
     ]
     summary = compute_speed_metrics(observations, wall_clock_s=wall_s)
+    underruns = [
+        r.max_playback_underrun_s
+        for r in observations
+        if r.is_success and r.chunk_audio_duration_s and r.max_playback_underrun_s is not None
+    ]
     succeeded = sum(r.is_success for r in observations)
     summary.update(
+        max_playback_underrun_max_s=round(max(underruns), 4) if underruns else None,
         expected=expected,
         attempted=len(rows),
         succeeded=succeeded,
@@ -292,6 +300,10 @@ def performance_table(manifest, performance, *, averages=False):
         *GAIN_METRICS.items(),
         ("audio_ttfp_mean_s", "TTFA Mean (s)"),
         ("rtf_mean", "RTF Mean"),
+        ("max_playback_underrun_max_s", "最大欠载 Max (s)"),
+        ("max_playback_underrun_p95_s", "最大欠载 P95 (s)"),
+        ("c50", "C50 (%)"),
+        ("c100", "C100 (%)"),
         ("audio_throughput_s_per_s", "audio-s/s"),
         ("throughput_qps", "QPS"),
     )
@@ -413,6 +425,8 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
         "E2E为完整响应耗时；TTFT为首个非空文本；TTFA为首个非空PCM（可能含静音）。分位数逐组计算。",
         "RTF Mean与TTFA Mean是本组成功且指标有效请求的算术平均；RTF P95与TTFA P95是这些请求的95分位数。RTF先逐请求计算E2E/实际PCM时长，再求统计量。",
         "收益统计与性能筛选统一使用TTFA P95 (s)和RTF P95；Mean仅保留为诊断信息，缺失P95不回退Mean。",
+        "最大欠载是单请求从首块开始立即播放、耗尽已到达音频后等待后续块的最长停顿；Max/P95分别对本组有效成功请求的最大欠载取最大值/95分位数，单位秒，不是块间隔。",
+        "C50/C100是最大欠载分别≤50ms/≤100ms的有效成功多块音频请求百分比，范围0–100；失败和缺少多块观测的请求不进分母，非流式/纯文本/单块音频记N/A。",
         "custom-json表示自定义固定样例，数据集链接指向本run冻结输入；原始测量编号保留在performance.json。",
     ]
     for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
@@ -428,6 +442,7 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
                 "仅全部轮次计时完整且所有请求成功时给出均值；缺轮/失败/超时为 N/A。",
                 "P50/P95 均值为各轮分位数的算术平均，不是合并请求的分位数；QPS/audio-s/s 先逐轮计算再平均。",
                 "收益采用标为“轮均”的P95列，即各轮P95等权平均；Mean列仅诊断，跨数据集汇总须注明权重。",
+                "最大欠载Max/P95及C50/C100轮均也先逐轮计算再等权平均；Max轮均不是全程最坏欠载，C50/C100轮均不是合并请求的通过率；任一轮缺少有效观测则记N/A。",
                 "预热在每轮正式计时前完成，不计入性能或质量分母；记录见 [warmup.json](warmup.json)。",
             ]
         )

@@ -148,6 +148,57 @@ def test_all_failed_metrics_have_defined_denominators():
     assert value["rtf_mean"] is None
 
 
+def test_playback_summary_uses_successful_observations_and_inclusive_thresholds():
+    rows = [
+        dict(
+            is_success=True,
+            latency_s=1,
+            chunk_audio_duration_s=[0.1, 0.1],
+            max_playback_underrun_s=value,
+        )
+        for value in (0, 0.05, 0.1, 0.2)
+    ]
+    rows.extend(
+        [
+            dict(is_success=False, chunk_audio_duration_s=[0.1, 0.1], max_playback_underrun_s=9),
+            dict(is_success=True, chunk_audio_duration_s=[0.1], max_playback_underrun_s=None),
+            dict(is_success=True),
+        ]
+    )
+    metrics = summarize(rows, 7, 5)
+    assert metrics["max_playback_underrun_max_s"] == 0.2
+    assert metrics["max_playback_underrun_p95_s"] == pytest.approx(0.185)
+    assert metrics["c50"] == 50 and metrics["c100"] == 75
+    assert metrics["playback_continuity_requests"] == 4
+    assert metrics["playback_continuity_na_requests"] == 1
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [],
+        [dict(is_success=False)],
+        [dict(is_success=True, task="t2t")],
+        [dict(is_success=True, audio_duration_s=1)],
+        [dict(is_success=True, chunk_audio_duration_s=[1], max_playback_underrun_s=None)],
+    ],
+)
+def test_playback_summary_without_valid_multichunk_audio_is_na(rows):
+    metrics = summarize(rows, 1, 1)
+    for field in ("max_playback_underrun_max_s", "max_playback_underrun_p95_s", "c50", "c100"):
+        assert metrics[field] is None
+
+
+def test_playback_summary_preserves_zero_underrun():
+    metrics = summarize(
+        [dict(is_success=True, chunk_audio_duration_s=[1, 1], max_playback_underrun_s=0)],
+        1,
+        1,
+    )
+    assert metrics["max_playback_underrun_max_s"] == metrics["max_playback_underrun_p95_s"] == 0
+    assert metrics["c50"] == metrics["c100"] == 100
+
+
 async def test_cancelled_run_resume_keeps_attempts(server, tmp_path):
     import asyncio
 
@@ -388,6 +439,8 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
                 "latency_s": 1,
                 "rtf": 0.5,
                 "audio_ttfp_s": 0.2,
+                "chunk_audio_duration_s": [1, 1],
+                "max_playback_underrun_s": 0.04,
             },
             {
                 "is_success": True,
@@ -395,6 +448,8 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
                 "latency_s": 1,
                 "rtf": 0.25,
                 "audio_ttfp_s": 0.8,
+                "chunk_audio_duration_s": [2, 2],
+                "max_playback_underrun_s": 0.12,
             },
             {"is_success": False, "audio_duration_s": 99, "latency_s": 1, "audio_ttfp_s": 99},
         ],
@@ -435,9 +490,14 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
     assert rows[0]["模态/语言"] == "S2S / EN"
     assert rows[0]["TTFA Mean (s)"] == "0.5" and rows[0]["TTFA P95 (s)"] == "0.77"
     assert rows[0]["RTF Mean"] == "0.375" and rows[0]["RTF P95"] == "0.4875"
+    assert rows[0]["最大欠载 Max (s)"] == "0.12"
+    assert rows[0]["最大欠载 P95 (s)"] == "0.116"
+    assert rows[0]["C50 (%)"] == rows[0]["C100 (%)"] == "50"
     assert rows[1]["数据集"] == "[custom-json/t2t-en](inputs/t2t-en.jsonl)"
     assert rows[1]["audio-s/s"] == "N/A" and rows[1]["QPS"] == "0.5"
     assert rows[1]["TTFA Mean (s)"] == rows[1]["TTFA P95 (s)"] == "N/A"
+    for field in ("最大欠载 Max (s)", "最大欠载 P95 (s)", "C50 (%)", "C100 (%)"):
+        assert rows[1][field] == "N/A"
     averages = dict(
         audio,
         dataset="opaque",
@@ -449,6 +509,8 @@ def test_performance_table_displays_recorded_dataset_and_audio_throughput():
     assert "TTFA Mean (s)（轮均）" in average_table[0]
     assert "TTFA P95 (s)（轮均）" in average_table[0]
     assert "RTF Mean（轮均）" in average_table[0] and "RTF P95（轮均）" in average_table[0]
+    for field in ("最大欠载 Max (s)", "最大欠载 P95 (s)", "C50 (%)", "C100 (%)"):
+        assert field + "（轮均）" in average_table[0]
 
 
 def test_correctness_summary_validates_binding_and_reports_missing_or_incomplete(tmp_path):

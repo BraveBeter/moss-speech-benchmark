@@ -99,6 +99,38 @@ def test_repeat_means_are_not_pooled_and_incomplete_or_failed_rounds_are_not_ave
     assert result["failed"] == 1 and result["latency_median_s"] is None
 
 
+def test_continuity_repeat_means_keep_percentages_and_missing_observations():
+    cells = [dict(id=f"x-c4-r{i}", dataset="x", concurrency=4, repeat=i) for i in (1, 2, 3)]
+    manifest = {"cells": cells, "contract": {"repeats": 3}}
+    performance = {
+        cell["id"]: dict(
+            expected=4,
+            attempted=4,
+            succeeded=4,
+            failed=0,
+            not_attempted=0,
+            length_count=0,
+            measurement_complete=True,
+            max_playback_underrun_max_s=maximum,
+            max_playback_underrun_p95_s=p95,
+            c50=c50,
+            c100=c100,
+        )
+        for cell, maximum, p95, c50, c100 in zip(
+            cells, (0.1, 0.2, 0.9), (0.05, 0.15, 0.4), (100, 50, 0), (100, 75, 25), strict=True
+        )
+    }
+    result = average_repeats(manifest, performance)["x-c4"]
+    assert result["max_playback_underrun_max_s"] == pytest.approx(0.4)
+    assert result["max_playback_underrun_p95_s"] == pytest.approx(0.2)
+    assert result["c50"] == 50 and result["c100"] == pytest.approx(200 / 3)
+    for field in ("max_playback_underrun_max_s", "max_playback_underrun_p95_s", "c50", "c100"):
+        saved = performance[cells[-1]["id"]].pop(field)
+        result = average_repeats(manifest, performance)["x-c4"]
+        assert result[field] is None
+        performance[cells[-1]["id"]][field] = saved
+
+
 async def test_warmup_failure_retains_evidence_and_blocks_formal_requests(server, tmp_path):
     from moss_speech_bench.storage import write_json
 
