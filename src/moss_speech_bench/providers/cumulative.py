@@ -32,6 +32,7 @@ FEATURES = tuple(
             *FLAGS.values(),
             *MICRO_SUITES,
             "codec-cfm-graph",
+            "codec-async",
             "codec-flow-bf16",
             "codec-sdpa-bf16",
             "codec-resident-bf16",
@@ -46,6 +47,7 @@ FEATURES = tuple(
 )
 COMPUTE_AR_FEATURES = (*AR_FEATURES, "ar-serial-decode-graph", "ar-batched-rope")
 STREAMING_CODEC_FEATURES = (
+    "codec-async",
     "codec-flow-bf16",
     "codec-sdpa-bf16",
     "codec-resident-bf16",
@@ -91,6 +93,16 @@ def validate_codec_qualification(report, selected, reference, precision_contract
     assert report["cleanup_exact"] is True
     for feature in expected:
         assert type(report["executions"][feature]) is int and report["executions"][feature] > 0
+    if "codec-async" in expected:
+        assert report["async_flow_slots"] == 2
+        assert report["async_pcm_exact"] is True
+        if "codec-full-flow-bf16" in expected:
+            assert report["async_bf16_flow_slots"] == 2
+            assert (
+                type(report["async_bf16_parameter_bytes"]) is int
+                and report["async_bf16_parameter_bytes"] > 0
+            )
+            assert report["async_fp32_cpu_backup_bytes"] == 2 * report["async_bf16_parameter_bytes"]
     if "codec-sdpa-bf16" in expected:
         assert report["bf16_sdpa_mask_broadcast"] is True
     if "codec-resident-bf16" in expected:
@@ -153,6 +165,24 @@ def validate(config):
     if config.get("context_remaining") is not True or config.get("test_suite") != "eager-bugs":
         raise ValueError("Cumulative profile requires the new eager regression contract")
     deployment = config.get("deployment", {})
+    slots = deployment.get("codec_flow_slots", 0)
+    factory_slots = config.get("run_vocoder", {}).get("codec_flow_slots", 0)
+    if (
+        type(slots) is not int
+        or type(factory_slots) is not int
+        or slots != (2 if "codec-async" in selected else 0)
+        or factory_slots != slots
+        or (
+            slots
+            and (
+                not {"codec-bias-broadcast", "codec-unready-return"} <= set(selected)
+                or not {"codec-cfm-graph", "codec-full-flow-bf16"} & set(selected)
+            )
+        )
+    ):
+        raise ValueError(
+            "Async Codec requires explicitly matching two-slot activation and retained strategies"
+        )
     for flag, feature in FLAGS.items():
         if deployment.get(flag, False) is not (feature in selected):
             raise ValueError("Cumulative activation mismatch: " + flag)

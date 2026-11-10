@@ -15,6 +15,7 @@ FEATURES = (
 )
 MARKERS = {
     "codec-full-flow-bf16": "MOSS_CODEC_FULL_FLOW_BF16_ACTIVE",
+    "codec-async": "MOSS_CODEC_ASYNC_ACTIVE flow_slots=2 cudnn_enabled=True",
     "codec-encoder-bf16": "MOSS_FLOW_ENCODER_BF16_ACTIVE",
     "codec-storage-bf16": "MOSS_FLOW_BF16_STORAGE_ACTIVE",
     "codec-resident-bf16": "MOSS_FLOW_BF16_RESIDENT_ACTIVE",
@@ -150,6 +151,10 @@ def validate_activation(config, output, require=True):
     selected = [feature for feature in features(config) if feature in MARKERS]
     required = config.get("service_activation_required", selected)
     counts = {feature: text.count(MARKERS[feature]) for feature in selected}
+    if {"codec-async", "codec-full-flow-bf16"} <= set(selected):
+        counts["codec-async"] = text.count(
+            MARKERS["codec-async"] + " flow_precision=full_flow_bf16"
+        )
     native_graph_replays = sum(
         any(MARKERS[feature] in line for feature in selected if feature.endswith("graph"))
         and all(

@@ -1110,5 +1110,19 @@
   "C03-codec-full-flow-bf16": [
     "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_native_solver_and_exact_owner_restoration[False-cuda]",
     "tests/unit_test/moss_speech/test_full_flow_precision.py::test_full_flow_bf16_native_solver_and_exact_owner_restoration[True-cuda]"
+  ],
+  "C01-codec-async": [
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_factory_defers_graph_to_execution_slot[1]",
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_factory_defers_graph_to_execution_slot[2]",
+    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[audio_vocoder-codec_flow_slots-True]",
+    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[audio_vocoder-codec_flow_slots--1]",
+    "tests/unit_test/moss_speech/test_config.py::test_typed_config_rejects_obsolete_or_untrained_knobs[audio_vocoder-codec_flow_slots-3]",
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading[full_flow_bf16-1500]",
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading[ffn-None]",
+    "tests/unit_test/moss_speech/test_config.py::test_async_codec_rejects_incompatible_precision_before_loading[ffn_attention_sdpa_storage-None]"
+  ],
+  "C03-codec-async": [
+    "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort[fp32]",
+    "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort[full-bf16]"
   ]
 }
