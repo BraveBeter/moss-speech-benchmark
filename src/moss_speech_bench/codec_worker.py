@@ -279,6 +279,7 @@ def infer(config, root):
                 encoder_fp32_boundaries=True,
             )
         if full_scope is not None:
+            report.pop("bf16_executions")
             flow = codec.decoder.flow
             assert all(parameter.dtype is torch.bfloat16 for parameter in flow.parameters())
             assert all(

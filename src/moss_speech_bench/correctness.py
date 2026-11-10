@@ -644,7 +644,7 @@ async def provider(gate, config, output):
             checks.append(
                 dict(
                     id="actual-bf16-structural-hf-offline-pcm-state"
-                    if "codec-flow-bf16" in features(config)
+                    if {"codec-flow-bf16", "codec-full-flow-bf16"} & set(features(config))
                     else "actual-cumulative-codec-hf-pcm-state",
                     status="pass",
                 )
