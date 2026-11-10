@@ -14,6 +14,7 @@ FEATURES = (
     "mixed-modalities",
 )
 MARKERS = {
+    "codec-middle-bias-reuse": "MOSS_CODEC_MIDDLE_BIAS_REUSE_ACTIVE",
     "codec-full-flow-bf16": "MOSS_CODEC_FULL_FLOW_BF16_ACTIVE",
     "codec-async": "MOSS_CODEC_ASYNC_ACTIVE flow_slots=2 cudnn_enabled=True",
     "codec-encoder-bf16": "MOSS_FLOW_ENCODER_BF16_ACTIVE",

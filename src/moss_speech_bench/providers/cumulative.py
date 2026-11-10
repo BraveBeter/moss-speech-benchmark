@@ -22,6 +22,7 @@ FLAGS = {
     "ar_prefix_cache": "ar-prefix-cache",
     "cache_sampling_history": "ar-sampling-history",
     "broadcast_attention_bias": "codec-bias-broadcast",
+    "reuse_middle_attention_bias": "codec-middle-bias-reuse",
     "stream_decode_fairness": "codec-fairness",
     "small_first_chunk": "context-small-first",
 }
@@ -47,6 +48,7 @@ FEATURES = tuple(
 )
 COMPUTE_AR_FEATURES = (*AR_FEATURES, "ar-serial-decode-graph", "ar-batched-rope")
 STREAMING_CODEC_FEATURES = (
+    "codec-middle-bias-reuse",
     "codec-async",
     "codec-flow-bf16",
     "codec-sdpa-bf16",
@@ -93,6 +95,13 @@ def validate_codec_qualification(report, selected, reference, precision_contract
     assert report["cleanup_exact"] is True
     for feature in expected:
         assert type(report["executions"][feature]) is int and report["executions"][feature] > 0
+    if "codec-middle-bias-reuse" in expected:
+        assert report["middle_bias_exact"] is True
+        assert report["middle_bias_constructions"] > 0 and report["middle_bias_reuses"] > 0
+        assert report["middle_bias_fallbacks"] == 0
+        if "codec-async" in expected:
+            assert report["async_middle_bias_slots"] == 2
+            assert report["async_middle_bias_reuses"] > 0
     if "codec-async" in expected:
         assert report["async_flow_slots"] == 2
         assert report["async_pcm_exact"] is True
@@ -188,7 +197,13 @@ def validate(config):
             raise ValueError("Cumulative activation mismatch: " + flag)
         factory = (
             config.get("run_vocoder", {})
-            if flag in ("broadcast_attention_bias", "stream_decode_fairness", "small_first_chunk")
+            if flag
+            in (
+                "broadcast_attention_bias",
+                "reuse_middle_attention_bias",
+                "stream_decode_fairness",
+                "small_first_chunk",
+            )
             else config.get("run_factory", {})
         )
         option = "prefix_cache" if flag == "ar_prefix_cache" else flag
@@ -290,6 +305,8 @@ def validate(config):
 
     if ("codec-full-flow-bf16" in selected) != (precision == "full_flow_bf16"):
         raise ValueError("Full Flow BF16 requires its explicit solver and storage proof")
+    if "codec-middle-bias-reuse" in selected and precision != "full_flow_bf16":
+        raise ValueError("Middle bias reuse is qualified with the full Flow BF16 profile")
     if precision == "full_flow_bf16" and {
         "codec-flow-bf16",
         "codec-sdpa-bf16",

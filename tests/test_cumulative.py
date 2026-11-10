@@ -614,6 +614,31 @@ def test_full_flow_bf16_proof_requires_real_solver_states_and_cpu_backups():
                 asynchronous | patch, selected_async, reference, "e13-bf16-approx-v1"
             )
 
+    middle = asynchronous | dict(
+        optimizations=selected_async + ["codec-middle-bias-reuse"],
+        executions=asynchronous["executions"] | {"codec-middle-bias-reuse": 22},
+        middle_bias_exact=True,
+        middle_bias_constructions=2,
+        middle_bias_reuses=22,
+        middle_bias_fallbacks=0,
+        async_middle_bias_slots=2,
+        async_middle_bias_reuses=44,
+    )
+    middle_selected = middle["optimizations"]
+    validate_codec_qualification(middle, middle_selected, reference, "e13-bf16-approx-v1")
+    for patch in [
+        dict(middle_bias_exact=False),
+        dict(middle_bias_constructions=0),
+        dict(middle_bias_reuses=0),
+        dict(middle_bias_fallbacks=1),
+        dict(async_middle_bias_slots=1),
+        dict(async_middle_bias_reuses=0),
+    ]:
+        with pytest.raises(AssertionError):
+            validate_codec_qualification(
+                middle | patch, middle_selected, reference, "e13-bf16-approx-v1"
+            )
+
 
 @pytest.mark.parametrize(
     "mismatch", [None, "undeclared", "deployment", "factory", "float", "dependencies"]
@@ -754,3 +779,48 @@ def test_async_parameterized_checks_are_enumerated_in_the_frozen_selection():
         for key in ["full_flow_bf16-1500", "ffn-None", "ffn_attention_sdpa_storage-None"]
     } <= set(selection["C01-codec-async"])
     assert set(selection["C03-codec-async"]) == {stream + "[fp32]", stream + "[full-bf16]"}
+
+
+@pytest.mark.parametrize("mismatch", [None, "undeclared", "deployment", "factory"])
+def test_middle_bias_reuse_requires_explicit_serving_flag_and_qualification(tmp_path, mismatch):
+    selected = [
+        "codec-bias-broadcast",
+        "codec-unready-return",
+        "codec-full-flow-bf16",
+        "codec-middle-bias-reuse",
+    ]
+    deployment = dict(
+        ar_graph=False,
+        broadcast_attention_bias=True,
+        flow_precision="full_flow_bf16",
+        reuse_middle_attention_bias=True,
+    )
+    vocoder = dict(
+        broadcast_attention_bias=True,
+        flow_precision="full_flow_bf16",
+        reuse_middle_attention_bias=True,
+    )
+    if mismatch == "undeclared":
+        selected.remove("codec-middle-bias-reuse")
+    elif mismatch == "deployment":
+        deployment["reuse_middle_attention_bias"] = False
+    elif mismatch == "factory":
+        vocoder["reuse_middle_attention_bias"] = False
+    path = configuration(
+        tmp_path,
+        optimizations=selected,
+        deployment=deployment,
+        run_factory={},
+        run_vocoder=vocoder,
+        precision_contract="e13-bf16-approx-v1",
+    )
+    if mismatch is not None:
+        with pytest.raises(ValueError):
+            load_suite(path)
+    else:
+        config = load_suite(path)
+        cpu = selected_nodes("C01", "cumulative", True, "eager-bugs", selected)
+        cuda = selected_nodes("C03", "cumulative", True, "eager-bugs", selected)
+        assert sum("test_middle_bias_reuse" in node for node in cpu) == 10
+        assert sum("test_middle_bias_reuse" in node for node in cuda) == 4
+        assert "codec-middle-bias-reuse" in config["optimizations"]

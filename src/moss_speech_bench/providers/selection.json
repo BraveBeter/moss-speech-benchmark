@@ -1124,5 +1124,23 @@
   "C03-codec-async": [
     "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort[fp32]",
     "tests/unit_test/moss_speech/test_streaming.py::test_async_vocoder_fullweights_stream_completion_and_abort[full-bf16]"
+  ],
+  "C01-codec-middle-bias-reuse": [
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[fp32-cpu-False-False]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[fp32-cpu-False-True]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[fp32-cpu-True-False]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[fp32-cpu-True-True]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_falls_back_for_mutating_consumers[processor]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_falls_back_for_mutating_consumers[hook]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_falls_back_for_mutating_consumers[preparer]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_does_not_retain_bias_after_exception",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_keeps_training_and_grad_consumers_separate[False]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_keeps_training_and_grad_consumers_separate[True]"
+  ],
+  "C03-codec-middle-bias-reuse": [
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[bf16-cuda-False-False]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[bf16-cuda-False-True]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[bf16-cuda-True-False]",
+    "tests/unit_test/moss_speech/test_middle_bias_reuse.py::test_middle_bias_reuse_preserves_live_mask_and_call_ownership[bf16-cuda-True-True]"
   ]
 }
