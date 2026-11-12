@@ -1,0 +1,16 @@
+{
+  "python": "../../.venv-client/bin/python",
+  "physical_gpu": 0,
+  "asr_en": {
+    "model": "whisper-large-v3",
+    "path": "../../assets/whisper/large-v3.pt"
+  },
+  "asr_zh": {
+    "model": "paraformer-zh",
+    "path": "../../assets/paraformer-zh"
+  },
+  "sim": {
+    "path": "../../assets/wavlm_large_finetune.pth",
+    "wavlm_base": "../../assets/wavlm_large.pt"
+  }
+}

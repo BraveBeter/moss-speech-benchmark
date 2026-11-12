@@ -1,126 +1,134 @@
-import base64
 import csv
 
 import pytest
+from helpers import workload
 
-from moss_speech_bench.datasets import prepare_dataset
-from moss_speech_bench.storage import write_json
-
-
-def prepare(tmp_path, kind, source, task, **kw):
-    spec = dict(id="test", kind=kind, source=source, task=task, language="en", expected=1, **kw)
-    return prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={"seed": 42})
+from moss_speech_bench.datasets import load_workload
+from moss_speech_bench.storage import read_json, write_json
 
 
-def test_storycloze_and_speech_input_mapping(tmp_path):
-    story = {"InputStoryid": "story-1", "AnswerRightEnding": "2"}
-    story.update({f"InputSentence{i}": f"Sentence {i}." for i in range(1, 5)})
-    story.update(RandomFifthSentenceQuiz1="Wrong ending", RandomFifthSentenceQuiz2="Right ending")
-    with (tmp_path / "story.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=story)
+def load(path, **kwargs):
+    return load_workload(path, "test", True, **kwargs)
+
+
+def test_deterministic_nested_selection_and_reuse_across_modalities(tmp_path):
+    path = workload(tmp_path, tasks=("t2t", "t2s", "s2t", "s2s"))
+    _, small, _ = load(path, counts={"llama_questions": 20})
+    rows, large, _ = load(path, counts={"llama_questions": 50})
+    chosen = large["datasets"]["llama_questions"]["ids"]
+    assert small["datasets"]["llama_questions"]["ids"] == chosen[:20]
+    assert all([r["id"] for r in requests] == chosen for requests, _ in rows.values())
+    assert len(set(chosen)) == 50
+    frozen = tmp_path / "selection.json"
+    write_json(frozen, large)
+    assert load(path, selection_path=frozen)[1] == large
+    assert (
+        load_workload(path, "another-model", False, tasks=["s2t"], selection_path=frozen)[1]
+        == large
+    )
+    assert load(path, counts={"llama_questions": 50}, seed=99)[1] != large
+
+
+def test_ranking_independent_of_csv_order_but_reuse_detects_changed_source(tmp_path):
+    path = workload(tmp_path)
+    _, selected, _ = load(path, counts={"llama_questions": 30})
+    frozen = tmp_path / "selection.json"
+    write_json(frozen, selected)
+    source = tmp_path / "llama_questions.csv"
+    with source.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields, rows = reader.fieldnames, list(reader)
+    with source.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
-        writer.writerow(story)
-    rows, metadata = prepare(tmp_path, "storycloze", "story.csv", "t2t")
-    assert rows[0]["expected"] == "B"
-    assert "A: Wrong ending\nB: Right ending" in rows[0]["payload"]["messages"][0]["content"]
-    assert metadata["source_file_sha256"] and metadata["samples_hash"]
-    (tmp_path / "question.wav").write_bytes(b"test audio")
-    (tmp_path / "audio.csv").write_text(
-        "audio_filename,answer_normalized_aliases\nquestion.wav,Paris\n"
+        writer.writerows(reversed(rows))
+    again = load(path, counts={"llama_questions": 30})[1]
+    assert (
+        again["datasets"]["llama_questions"]["ids"]
+        == selected["datasets"]["llama_questions"]["ids"]
     )
-    rows, _ = prepare(tmp_path, "openaudio", "audio.csv", "s2s")
-    payload = rows[0]["payload"]
-    assert payload["modalities"] == ["audio"]
-    audio = payload["messages"][0]["content"][0]["input_audio"]
-    assert base64.b64decode(audio["data"]) == b"test audio"
-    assert rows[0]["expected"] == "Paris"
+    with pytest.raises(ValueError, match="population changed"):
+        load(path, selection_path=frozen)
 
 
-def test_seedtts_does_not_fall_back_to_chat(tmp_path):
-    (tmp_path / "meta.lst").write_text("s1|reference text|ref.wav|target text\n")
-    with pytest.raises(ValueError, match="Codec Decoder"):
-        prepare(tmp_path, "seedtts", "meta.lst", "t2s")
+def test_reuse_detects_audio_change_and_unknown_selection_version(tmp_path):
+    path = workload(tmp_path)
+    _, selection, _ = load(path, counts={"llama_questions": 1})
+    frozen = tmp_path / "selection.json"
+    write_json(frozen, selection)
+    first = selection["datasets"]["llama_questions"]["ids"][0]
+    (tmp_path / "audio" / first).write_bytes(b"changed")
+    with pytest.raises(ValueError, match="input hash mismatch"):
+        load(path, selection_path=frozen)
+    selection["version"] = "unknown"
+    write_json(frozen, selection)
+    with pytest.raises(ValueError, match="version"):
+        load(path, selection_path=frozen)
 
 
-def test_duplicate_ids_and_formal_warmup_overlap_rejected(tmp_path):
-    from moss_speech_bench.datasets import load_workload
+@pytest.mark.parametrize(
+    "counts", [{"llama_questions": 0}, {"llama_questions": 301}, {"web_questions": 20}]
+)
+def test_invalid_counts(tmp_path, counts):
+    with pytest.raises(ValueError):
+        load(workload(tmp_path), counts=counts)
 
-    write_json(tmp_path / "samples.json", [{"id": "same", "text": "hello"}] * 2)
-    spec = dict(
-        id="test", kind="json", source="samples.json", task="t2s", language="en", expected=2
+
+def test_selection_and_capability_validation(tmp_path):
+    path = workload(tmp_path)
+    with pytest.raises(ValueError, match="supported"):
+        load(path, tasks=["t2t"])
+    with pytest.raises(ValueError, match="unique configured"):
+        load(path, datasets=["llama_questions", "llama_questions"])
+    spec = read_json(path)
+    spec["datasets"][0]["id"] = "storycloze"
+    write_json(path, spec)
+    with pytest.raises(ValueError, match="Configure unique"):
+        load(path)
+
+
+@pytest.mark.parametrize("task", ["t2t", "t2s", "s2t", "s2s"])
+def test_modality_payload_and_system(tmp_path, task):
+    path = workload(tmp_path, tasks=(task,))
+    rows, _, _ = load(path, counts={"llama_questions": 1})
+    sample = next(iter(rows.values()))[0][0]
+    payload = sample["payload"]
+    assert payload["modalities"] == ["audio" if task.endswith("s") else "text"]
+    assert isinstance(payload["messages"][-1]["content"], list) == task.startswith("s")
+    assert ("spoken outputs" in payload["messages"][0]["content"]) == task.endswith("s")
+    assert "repeat" not in payload["messages"][0]["content"].lower()
+    assert sample["expected"] == "Paris" and sample["question"] == "Question?"
+    assert ("audio" in payload) == task.endswith("s")
+
+
+def test_speech_transport_is_nonstreaming_t2s_and_freezes_voice(tmp_path):
+    path = workload(tmp_path)
+    config = read_json(path)
+    (tmp_path / "voice.wav").write_bytes(b"voice")
+    config["service"] = dict(
+        api="speech", tasks=["t2s"], streaming=False, reference_audio="voice.wav"
     )
-    with pytest.raises(ValueError, match="Duplicate"):
-        prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
-    write_json(tmp_path / "samples.json", [{"id": "same", "text": "hello"}])
-    spec["expected"] = 1
-    write_json(tmp_path / "config.json", {"datasets": [spec], "warmup": spec})
-    with pytest.raises(ValueError, match="disjoint"):
-        load_workload(tmp_path / "config.json", "moss", True, "custom")
+    write_json(path, config)
+    with pytest.raises(ValueError, match="no-stream"):
+        load(path)
+    rows, _, _ = load_workload(path, "hf", False, counts={"llama_questions": 1})
+    sample = next(iter(rows.values()))[0][0]
+    assert sample["endpoint"] == "/v1/audio/speech"
+    assert sample["payload"]["input"] == "Question?"
+    assert sample["payload"]["max_new_tokens"] == 128
+    assert sample["payload"]["ref_audio"].startswith("data:audio/wav;base64,")
 
 
-def test_explicit_prompt_preserves_reference_and_identity(tmp_path):
-    write_json(tmp_path / "samples.json", [{"id": "x", "text": "目标原文", "expected": "目标原文"}])
-    spec = dict(
-        id="test", kind="json", source="samples.json", task="t2s", language="zh", expected=1
+def test_text_inputs_can_run_without_recordings_but_speech_inputs_require_them(tmp_path):
+    import shutil
+
+    path = workload(tmp_path, tasks=("t2t", "t2s", "s2t"))
+    shutil.rmtree(tmp_path / "audio")
+    rows, selection, _ = load(path, tasks=["t2t", "t2s"], counts={"llama_questions": 2})
+    assert len(rows) == 2
+    assert all(
+        item["audio"] is None
+        for item in selection["datasets"]["llama_questions"]["inputs"].values()
     )
-    default, before = prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
-    spec["prompt"] = {
-        "name": "tts-system-zh-v1",
-        "system": "只用中文朗读，不翻译。",
-        "template": "{text}",
-    }
-    rows, metadata = prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
-    assert rows[0]["expected"] == "目标原文"
-    assert rows[0]["payload"]["messages"] == [
-        {"role": "system", "content": "只用中文朗读，不翻译。"},
-        {"role": "user", "content": "目标原文"},
-    ]
-    assert before["samples_hash"] != metadata["samples_hash"] and metadata["prompt_hash"]
-    assert default[0]["payload"]["messages"][0]["content"] == "目标原文"
-    spec["prompt"]["template"] = "{text} {other}"
-    with pytest.raises(ValueError, match="exactly one"):
-        prepare_dataset(spec, tmp_path, model="moss", stream=True, sampling={})
-
-
-def test_speech_prompt_changes_system_only(tmp_path):
-    (tmp_path / "audio.wav").write_bytes(b"audio")
-    write_json(tmp_path / "samples.json", [{"id": "x", "audio": "audio.wav", "expected": "Moscow"}])
-    spec = dict(
-        id="test",
-        kind="json",
-        source="samples.json",
-        task="s2s",
-        language="en",
-        expected=1,
-        prompt={"name": "qa-short-v1", "system": "Answer with a short phrase."},
-    )
-    rows, _ = prepare_dataset(spec, tmp_path, model="moss", stream=False, sampling={})
-    assert rows[0]["payload"]["messages"][0]["role"] == "system"
-    assert rows[0]["payload"]["messages"][1]["content"][0]["type"] == "input_audio"
-    assert rows[0]["expected"] == "Moscow"
-
-
-def test_reference_pcm_reader_preserves_signed_samples(tmp_path):
-    import wave
-
-    import numpy as np
-
-    from moss_speech_bench.providers.hf_http import read_pcm16
-
-    values = np.array([-32768, -1, 0, 1, 32767], dtype="<i2")
-    path = tmp_path / "reference.wav"
-    with wave.open(str(path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(24000)
-        wav.writeframes(values.tobytes())
-    samples, rate = read_pcm16(path)
-    assert rate == 24000 and samples.shape == (1, 5)
-    np.testing.assert_array_equal(samples[0], values.astype(np.float32) / np.float32(32768))
-
-
-@pytest.mark.parametrize("task", [None, "mixed", "video", "S2T"])
-def test_mixed_rows_reject_missing_or_unsupported_task(tmp_path, task):
-    write_json(tmp_path / "mixed.json", [dict(id="one", task=task, text="hello")])
-    with pytest.raises(ValueError, match="per-row task"):
-        prepare(tmp_path, "json", "mixed.json", "mixed")
+    with pytest.raises(ValueError, match="Missing/invalid dataset audio"):
+        load(path, tasks=["s2t"], counts={"llama_questions": 2})

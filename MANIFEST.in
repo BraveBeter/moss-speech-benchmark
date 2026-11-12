@@ -1,7 +1,3 @@
-include LICENSE ORIGIN.md origin.json CORRECTNESS.md
+include LICENSE ORIGIN.md origin.json SUMMARY_TEMPLATE.md JUDGE_PROTOCOL.md JUDGE_UPSTREAM_LICENSE.txt CODEC_ONLY.md
 recursive-include examples *.json
 recursive-include tests *.py
-
-include PROTOCOLS.md
-include CODEC_ONLY.md
-include LEGACY_CORRECTNESS.md

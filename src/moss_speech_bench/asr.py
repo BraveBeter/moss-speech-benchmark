@@ -43,7 +43,7 @@ async def transcribe_many(items, cache, deadline=None):
                     checksum = saved.pop("_hash", None)
                     if checksum != digest(saved):
                         raise ValueError("ASR cache hash mismatch")
-                    if saved["status"] != "budget_exhausted":
+                    if saved["status"] == "scored":
                         results[key] = saved
                         return
                 async with semaphore:
@@ -87,6 +87,8 @@ async def transcribe_many(items, cache, deadline=None):
                     result["ended_s"] = time.monotonic()
                     result["elapsed_s"] = result["ended_s"] - started
                     results[key] = result
+                    if result["status"] != "scored":
+                        file = cache / "attempts" / f"{key}-{time.time_ns()}.json"
                     write_json(file, dict(result, _hash=digest(result)))
 
             unique = {transcription_key(p, lang, s): (p, lang) for p, lang, s in items if s == spec}

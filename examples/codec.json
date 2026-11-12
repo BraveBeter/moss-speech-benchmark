@@ -1,0 +1,28 @@
+{
+  "protocol": "moss-codec-only-v2-full",
+  "backend": "hf-native",
+  "decoder_mode": "offline",
+  "physical_gpu": 0,
+  "seed": 42,
+  "python": "../../.venv-model/bin/python",
+  "codec_path": "../../assets/MOSS-Speech-Codec",
+  "codec_revision": "REPLACE_WITH_CODEC_COMMIT",
+  "hf_source_root": "../../assets/CosyVoice",
+  "corpus": "../../assets/seedtts/corpus.jsonl",
+  "corpus_revision": "REPLACE_WITH_SEEDTTS_COMMIT",
+  "corpus_sha256": "REPLACE_WITH_CORPUS_SHA256",
+  "assets": [
+    {
+      "path": "../../assets/MOSS-Speech-Codec/model.safetensors",
+      "sha256": "REPLACE_WITH_WEIGHT_SHA256"
+    },
+    {
+      "path": "../../assets/MOSS-Speech-Codec/config.json",
+      "sha256": "REPLACE_WITH_CONFIG_SHA256"
+    },
+    {
+      "path": "../../assets/MOSS-Speech-Codec/modeling_moss_speech_codec.py",
+      "sha256": "REPLACE_WITH_SOURCE_SHA256"
+    }
+  ]
+}

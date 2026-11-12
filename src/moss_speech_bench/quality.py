@@ -1,39 +1,18 @@
 """Offline scoring of frozen inference artifacts; no generation requests."""
 
-import ast
 import asyncio
 import importlib.metadata
 import math
-import re
-import string
 import time
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
 
-from ._vendor.accuracy import extract_answer_letter
-from .datasets import QUICK_SCORE_BUDGET_S
 from .reporting import _format_value, _load_manifest, collect_cell, dataset_columns
-from .storage import digest, read_json, read_jsonl, source_identity, write_json
+from .storage import digest, file_hash, read_json, read_jsonl, source_identity, write_json
 
 
 class Unavailable(RuntimeError):
     """An explicitly required scoring dependency or asset is absent."""
-
-
-def normalize_answer(text):
-    text = str(text).lower().translate(str.maketrans("", "", string.punctuation))
-    return " ".join(re.sub(r"\b(a|an|the)\b", " ", text).split())
-
-
-def aliases(value):
-    if isinstance(value, str) and value.startswith("["):
-        value = ast.literal_eval(value)
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list) or not value or not all(isinstance(v, str) for v in value):
-        raise ValueError("Expected nonempty answer string or list of aliases")
-    return value
 
 
 class LocalScorers:
@@ -105,24 +84,25 @@ class LocalScorers:
         return self.model("utmos").score_batch([str(audio)])[0]
 
 
-def _asset_hash(path):
-    import hashlib
-
-    checksum = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            checksum.update(block)
-    return checksum.hexdigest()
-
-
 def configuration(path):
     config = read_json(path) if path else {}
+    if not isinstance(config, dict) or set(config) - {
+        "device",
+        "asr_en",
+        "asr_zh",
+        "sim",
+        "utmos",
+        "judge",
+        "python",
+        "physical_gpu",
+    }:
+        raise ValueError("Unsupported scoring configuration fields")
     root = Path(path).resolve().parent if path else Path.cwd()
     assets = {}
     for key in ("asr_en", "asr_zh", "sim", "utmos"):
         if key not in config:
             continue
-        for field in ("path", "wavlm_base", "reference"):
+        for field in ("path", "wavlm_base"):
             if field not in config[key]:
                 continue
             asset = (root / config[key][field]).resolve()
@@ -130,7 +110,7 @@ def configuration(path):
                 raise ValueError(f"Missing local scoring asset: {asset}")
             files = sorted(asset.rglob("*")) if asset.is_dir() else [asset]
             assets[key + "." + field] = {
-                str(f.relative_to(asset)) if asset.is_dir() else f.name: _asset_hash(f)
+                str(f.relative_to(asset)) if asset.is_dir() else f.name: file_hash(f)
                 for f in files
                 if f.is_file()
             }
@@ -180,7 +160,7 @@ def configuration(path):
         assets=assets,
         versions=versions,
         code=source_identity()["source_hash"],
-        protocol="moss-quality-v2-llm-judge",
+        protocol="moss-quality-v3-qa-only",
     )
 
 
@@ -197,108 +177,25 @@ def _measure(function):
 
 
 def evaluate(sample, row, audio, backend, config):
-    task, lang = sample["task"], sample["language"]
-    qa = sample.get("quality_task") == "qa"
-    metrics = ["wer" if lang == "en" else "cer", "sim"] if task == "t2s" else ["accuracy"]
-    if task == "s2s" or (qa and task == "t2s"):
-        metrics = ["accuracy", "utmos"]
-        if config.get("qa_answer_mention", False):
-            metrics.append("answer_mention")
+    metrics = ["accuracy", "utmos"] if sample["task"].endswith("s") else ["accuracy"]
     if not row or not row["is_success"]:
-        return {m: {"status": "generation_failed" if row else "not_attempted"} for m in metrics}
-    transcript = None
-    if task.endswith("s"):
-        transcript = _measure(lambda: backend.transcribe(audio, lang))
-    result = {}
-    for metric in metrics:
-        if metric in ("wer", "cer"):
-            if transcript["status"] != "scored":
-                result[metric] = transcript
-                continue
+        status = "generation_failed" if row else "not_attempted"
+        return {metric: dict(status=status) for metric in metrics}
+    transcript = (
+        _measure(lambda: backend.transcribe(audio, sample["language"]))
+        if sample["task"].endswith("s")
+        else None
+    )
 
-            def error_rate():
-                from ._vendor.asr_scoring import apply_wer
+    def accuracy():
+        if transcript and transcript["status"] != "scored":
+            raise Unavailable("QA transcript unavailable: " + str(transcript))
+        answer = transcript["value"] if transcript else row["text"]
+        return backend.judge(sample, answer)
 
-                scored = apply_wer(
-                    SimpleNamespace(target_text=sample["expected"], error="", is_success=False),
-                    transcript["value"],
-                    lang,
-                )
-                if not scored.is_success:
-                    raise ValueError(scored.error)
-                return {
-                    k: getattr(scored, k)
-                    for k in (
-                        "wer",
-                        "ref_norm",
-                        "hyp_norm",
-                        "substitutions",
-                        "deletions",
-                        "insertions",
-                        "hits",
-                    )
-                }
-
-            result[metric] = _measure(error_rate)
-        elif metric == "sim":
-
-            def similarity():
-                spec = config.get("sim", {})
-                if not spec.get("reference"):
-                    raise Unavailable("Fixed-voice SIM requires the actual server voice reference")
-                if (
-                    not config.get("_voice_sha256")
-                    or config.get("_reference_sha256") != config["_voice_sha256"]
-                ):
-                    raise Unavailable("SIM reference identity does not match deployment voice")
-                return backend.sim(spec["reference"], audio)
-
-            result[metric] = _measure(similarity)
-        elif metric == "answer_mention":
-
-            def mention():
-                if not transcript or transcript["status"] != "scored":
-                    raise Unavailable("QA transcript unavailable")
-                answer = " " + normalize_answer(transcript["value"]) + " "
-                return float(
-                    any(
-                        " " + normalize_answer(a) + " " in answer
-                        for a in aliases(sample["expected"])
-                    )
-                )
-
-            result[metric] = _measure(mention)
-        elif metric == "utmos":
-            result[metric] = _measure(lambda: backend.utmos(audio))
-        else:
-
-            def accuracy():
-                if sample.get("expected") is None:
-                    raise ValueError("Missing reference answer")
-                if task == "t2t" and not qa:
-                    expected = str(sample["expected"]).strip().upper()
-                    predicted = extract_answer_letter(row["text"])
-                    valid = predicted is not None and predicted < len(config.get("choices", "AB"))
-                    return {
-                        "correct": valid and chr(65 + predicted) == expected,
-                        "valid": valid,
-                        "answer": row["text"],
-                    }
-                if transcript and transcript["status"] != "scored":
-                    raise Unavailable("QA transcript unavailable: " + str(transcript))
-                answer = transcript["value"] if transcript else row["text"]
-                if config.get("qa_metric") != "legacy_em":
-                    return backend.judge(sample, answer)
-                normalized = normalize_answer(answer)
-                return {
-                    "correct": bool(normalized)
-                    and normalized in [normalize_answer(a) for a in aliases(sample["expected"])],
-                    "valid": bool(normalized),
-                    "answer": answer,
-                }
-
-            result[metric] = _measure(accuracy)
-    if transcript:
+    result = dict(accuracy=_measure(accuracy))
+    if "utmos" in metrics:
+        result["utmos"] = _measure(lambda: backend.utmos(audio))
         result["transcript"] = transcript
     return result
 
@@ -347,13 +244,7 @@ def score(directory, config_path=None, time_budget=None):
     root = Path(directory)
     manifest = _load_manifest(root)
     started = time.monotonic()
-    budget = (
-        time_budget
-        if time_budget is not None
-        else QUICK_SCORE_BUDGET_S
-        if manifest["contract"]["mode"] == "quick"
-        else None
-    )
+    budget = time_budget
     if budget is not None and not 0 < budget < float("inf"):
         raise ValueError("Time budget must be positive and finite")
     invocation = uuid.uuid4().hex
@@ -367,26 +258,7 @@ def score(directory, config_path=None, time_budget=None):
         _deadline=started + budget if budget else None,
     )
     backend = LocalScorers(config)
-    # Match the fixed reference to the actual deployment, never a SeedTTS clone prompt.
-    deployment = manifest["contract"].get("deployment") or {}
-    voice = deployment.get("settings", {}).get("voice_reference_sha256")
-    reference = contract["assets"].get("sim.reference", {})
-    config = dict(
-        config, _voice_sha256=voice, _reference_sha256=next(iter(reference.values()), None)
-    )
-    contract["voice_reference_sha256"] = voice
-    selection = config.get("cells")
-    if selection is None:
-        selected = {}
-        for cell in manifest["cells"]:
-            if cell["dataset"] not in selected or (
-                cell["concurrency"] == 4 and cell["repeat"] == 1
-            ):
-                selected[cell["dataset"]] = cell["id"]
-        selection = list(selected.values())
-    known = {c["id"] for c in manifest["cells"]}
-    if not selection or len(set(selection)) != len(selection) or not set(selection) <= known:
-        raise ValueError("Scoring cells must be nonempty, unique existing cell IDs")
+    selection = [c["id"] for c in manifest["cells"] if c["repeat"] == 1]
     asr_items = []
     for cell in manifest["cells"]:
         if cell["id"] not in selection:
@@ -449,18 +321,14 @@ def score(directory, config_path=None, time_budget=None):
                     }
                     file = cache / "attempts" / invocation / file.name
                 else:
-                    sample = dict(
-                        sample,
-                        source_dataset=manifest["contract"]["datasets"][cell["dataset"]].get(
-                            "source_dataset", cell["dataset"]
-                        ),
-                    )
                     metrics = evaluate(sample, row, audio, backend, config)
                 record = {
                     "sample_id": sample["id"],
                     "finish_reason": row.get("finish_reason") if row else None,
                     "metrics": metrics,
                 }
+                if any(v["status"] != "scored" for v in metrics.values()):
+                    file = cache / "attempts" / invocation / file.name
                 write_json(file, dict(record, _hash=digest(record)))
             records.append(record)
             record_entries.append(
@@ -497,16 +365,9 @@ def read_quality(root):
         return None
     quality = read_json(path)
     manifest = _load_manifest(root)
-    voice = (
-        (manifest["contract"].get("deployment") or {})
-        .get("settings", {})
-        .get("voice_reference_sha256")
-    )
-    if voice != quality["contract"].get("voice_reference_sha256"):
-        raise ValueError("Quality voice identity mismatch")
     if (
         not quality["selection"]
-        or not set(quality["selection"]) <= {c["id"] for c in manifest["cells"]}
+        or set(quality["selection"]) != {c["id"] for c in manifest["cells"] if c["repeat"] == 1}
         or set(quality["selection"]) != set(quality["cells"])
     ):
         raise ValueError("Quality selection mismatch")

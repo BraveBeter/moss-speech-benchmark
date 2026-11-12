@@ -73,7 +73,6 @@ def decode_wav(data):
 class ChatClient:
     def __init__(self, url, output_dir, *, sample_rate=24000, api_key=None):
         self.origin = url.rstrip("/")
-        self.url = url.rstrip("/") + "/v1/chat/completions"
         self.directory = Path(output_dir)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.sample_rate = sample_rate

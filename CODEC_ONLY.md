@@ -1,59 +1,50 @@
-# Codec-only reconstruction quality
+# 全量 Codec 重建
 
-The versioned `moss-codec-only-v1` protocol evaluates real audio → Encoder → Decoder. It never loads an AR language model or sends speech-QA requests. Existing QA suites, timing and correctness gates are unchanged.
+协议 `moss-codec-only-v2-full` 固定运行 Seed-TTS-Eval EN1088 + ZH2020。每条真实音频经过 Encoder→Decoder，使用对应说话人的 prompt；不加载 AR 模型，不发送 QA 请求。当前使用 HF 原生公开 decode 所支持的离线模式。
 
-## Frozen inputs
+## 输入
 
-Use a JSONL corpus with one record per target/prompt pair:
-
-```json
-{"id":"en-01","language":"en","text":"Actual target transcript.","target_audio":"/absolute/target.wav","target_sha256":"...","prompt_audio":"/absolute/same-speaker-prompt.wav","prompt_sha256":"..."}
-```
-
-The transcript belongs to the actual target recording and the speaker prompt belongs to that sample. Record the dataset revision, selection and complete hashes before inference. Do not substitute a global deployment voice or a QA answer.
-
-## Inference
-
-Start from `examples/codec-only.json`, replacing paths and hashes. Select `hf-native`, `sg-fp32` or `sg-bf16`. SG requires `model_root` and a complete clean `model_sha`; BF16 additionally requires `flow_precision: "ffn_attention"` (M1) or `"ffn_attention_sdpa"` (M2). HF requires its original CosyVoice/Matcha dependency source tree as `hf_source_root`. Explicitly select the model interpreter and an authorized physical GPU. Pin all Codec weight/config/source assets.
-
-```bash
-python -m moss_speech_bench --phase codec-infer --config hf.json --output-dir results/hf
-python -m moss_speech_bench --phase codec-infer --config sg-fp32.json --output-dir results/sg-fp32
-python -m moss_speech_bench --phase codec-infer --config sg-bf16.json --output-dir results/sg-bf16
-```
-
-Use one fresh directory per backend/configuration. All three use offline decoding to match the public native HF `decode` API. SG BF16 applies the selected branch's `FlowBF16Scope` to FFN and attention projections. M1 retains FP32 SDPA; M2 additionally uses BF16 SDPA Q/K/V and live bias. Encoder, noise, solver and HiFT remain FP32 in both profiles. This tests that precision strategy in offline reconstruction. Production streaming quality is a separate configuration and must not inherit these results automatically.
-
-Each backend runs its own Encoder, freezes target/prompt code ledgers and saves complete FLOAT WAVs. Native HF source is hash-verified and SG imports are forbidden in that path. Generation requires finite PCM and exactly 1920 samples per code. Failed samples remain in the planned denominator. Source/client identities, runtime versions, asset/input hashes and commands are retained.
-
-## Scoring
-
-Supply local scoring assets in a JSON configuration: `asr_en` with `model: whisper-large-v3` and `path: .../large-v3.pt`; `asr_zh` with `model: paraformer-zh` and its local `path`; `sim` with `path: .../wavlm_large_finetune.pth` and `wavlm_base: .../wavlm_large.pt`; plus `python` and `physical_gpu`. Optional dependencies are installed in the selected scorer environment, outside the lightweight client.
-
-```bash
-python -m moss_speech_bench --phase codec-score --score-config scorers.json --output-dir results/hf
-```
-
-Repeat for the SG runs. English uses Whisper-large-v3 with language=en, FP32 inference, temperature=0 and beam_size=5. Chinese uses Paraformer-zh. Existing client text normalizers produce English word-level WER and Chinese character-level CER. Corpus rates divide total substitutions+deletions+insertions by total reference words/characters; the per-sample mean is separate. SIM uses the existing WavLM speaker model against each sample's corresponding prompt, reported as cosine×100. Missing/failed scores are explicit and never become zero-error results. Existing scores cannot be overwritten implicitly.
-
-## Comparison
+配置参考 [codec.json](examples/codec.json)。corpus 为 JSONL，每行包含：
 
 ```json
-{"runs":{"HF native":"results/hf","SG FP32":"results/sg-fp32","SG BF16":"results/sg-bf16"}}
+{"id":"en-0001","language":"en","text":"Actual target transcript.","target_audio":"en/target.wav","target_sha256":"REPLACE","prompt_audio":"en/prompt.wav","prompt_sha256":"REPLACE"}
+```
+
+音频路径相对 corpus 所在目录。配置记录 corpus revision 和整个 JSONL 的 SHA256，同时冻结 Codec 权重、配置和代码资产。启动前验证 3108 条唯一 ID、语言数量及所有 target/prompt hash；不接受子集或缺样本。样本数和 hash 用于检查本地冻结输入，官方版本来源由配置 revision 和准备记录说明，不能仅凭数量宣称复现论文。
+
+`hf-native` 需要原始 Codec 及其 CosyVoice/Matcha 依赖。`sg-native` 需要 `model_root`、完整 `model_sha` 和干净 checkout；直接调用其 `MossSpeechCodecAdapter`。可用 `adapter_options` 传递该实现的构造参数，device 和资产路径由客户端控制。客户端不再注入 BF16 scope、Graph 或分支专属资格检查；行为属于被测实现，配置随运行冻结。
+
+配置中的 python、资产和源码路径相对配置所在目录。`physical_gpu` 显式选择，生成/评分分阶段运行；客户端不选择空闲卡。
+
+## 执行
+
+```bash
+moss-speech-bench codec run \
+  --config examples/codec.json --output-dir ../benchmark-results/codec-hf
+moss-speech-bench codec score \
+  --score-config examples/codec-scoring.json --output-dir ../benchmark-results/codec-hf
+moss-speech-bench codec report --output-dir ../benchmark-results/codec-hf
+```
+
+每个后端或配置使用新目录。worker 保存 Encoder codes、FLOAT WAV、实际样本数和耗时。完整生成要求有效有限 PCM 且每个 code 对应 1920 个采样点。单样本失败保留记录并继续，其余样本也不会代替它补齐分母。Codec 不支持隐式 resume；已有评分不自动覆盖。
+
+## 质量
+
+英文固定 Whisper-large-v3：language=en、FP32、temperature=0、beam_size=5；中文为 Paraformer-zh。WER/CER 按整个语料的编辑错误总数/参考词或字总数计算，另保留逐样本均值。SIM 使用 WavLM，与每条对应 prompt 比较，报告 cosine×100。缺失或失败的生成和评分保留全量分母，不当作零错误。
+
+评分配置见 [codec-scoring.json](examples/codec-scoring.json)，评分前再次校验冻结输出及 target/prompt 音频。输出身份和 hash 保留在同一运行目录。
+
+## 比较
+
+比较配置只包含运行名称和路径，路径相对该配置所在目录：
+
+```json
+{"runs":{"HF":"../benchmark-results/codec-hf","SG":"../benchmark-results/codec-sg"}}
 ```
 
 ```bash
-python -m moss_speech_bench --phase codec-report --config comparison.json --output-dir results/comparison
+moss-speech-bench codec report \
+  --config comparison.json --output-dir ../benchmark-results/codec-comparison
 ```
 
-Comparison requires identical corpus, Codec assets, seed and decode mode, and verifies target/prompt Encoder codes match. It retains absolute WER/CER/SIM, actual denominators and failures for each backend. A subset is a regression screen, not a full reproduction of paper numbers. Codec quality does not replace C00–C08, HTTP Quick or end-to-end latency tests.
-
-M2 additionally records positive BF16 SDPA execution counts and requires zero-stride head bias broadcasting without fallback. Its existing FP32 solver, noise and HiFT remain unchanged. These offline results do not establish streaming reconstruction quality.
-
-M3 uses `flow_precision: "ffn_attention_sdpa_resident"`: the M2 precision policy with resident BF16 compute-weight copies for unadapted Linear operators. FP32 master parameters remain unchanged; resident storage bytes and preparation copies are reported explicitly, without a memory-halving claim. Copies are owned by the fixed Codec lifetime and cleared on close. Encoder, solver and HiFT stay FP32.
-
-The experimental `ffn_attention_sdpa_storage` profile retains the resident profile compute policy while storing selected inference Linear parameters as BF16 on the GPU. Compute tensors alias the parameters; exact FP32 backups live on CPU and are restored on close. Qualification additionally requires `codec-storage-bf16`, the storage activation marker, actual parameter dtypes and aliasing, CPU-only FP32 backup bytes equal to twice the BF16 bytes, and lifecycle restoration tests. Existing FP32/M1/M2/M3a protocols and quality scoring remain unchanged.
-
-The experimental `ffn_attention_sdpa_storage_encoder` profile further lowers the internal Flow condition encoder Linear/relative-attention/convolution compute, retains explicit FP32 LayerNorm and output boundaries, and records positive encoder BF16 and convolution execution counts. Encoder Linear storage uses BF16 with exact CPU FP32 backups. Each new precision candidate requires its own reconstruction and quality run; input Whisper/VQ, AR and ASR/SIM scoring are unchanged.
-
-The experimental full_flow_bf16 profile lowers the complete internal Flow, including time embeddings/schedule, CFG and every Euler state, while preserving FP32 output to HiFT. It records all-parameter BF16 storage, exact FP32 CPU backups, native BF16 SDPA and solver-step dtype evidence. The original FP32 noise is rounded to BF16 rather than regenerated in a different dtype. Quality gates and scoring algorithms are unchanged; this remains offline Codec-only with no AR.
+要求相同 corpus、资产、seed、解码模式和评分器契约。报告各次实际身份、绝对分数与分母；Encoder codes 是否一致作为诊断记录，不作为内部精度准入证书。离线重建质量不能代表流式性能或端到端回答质量。

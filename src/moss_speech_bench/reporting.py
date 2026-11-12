@@ -218,48 +218,46 @@ def _differences(a, b, prefix=""):
 
 def _load_manifest(root):
     manifest = read_json(root / "manifest.json")
-    if manifest["contract"].get("suite_version"):
-        from .correctness import read_correctness
-
-        proof = manifest.get("correctness", {})
-        if not isinstance(proof, dict) or proof.get("status") != "pass":
-            raise ValueError("Speech-QA suite has no passed correctness proof")
-        if proof.get("report") != "correctness/correctness.json":
-            raise ValueError("Invalid correctness report path")
-        if hashlib.sha256((root / proof["report"]).read_bytes()).hexdigest() != proof["sha256"]:
-            raise ValueError("Correctness proof hash mismatch")
-        if read_correctness(root / "correctness")["status"] != "pass":
-            raise ValueError("Correctness gate is incomplete")
+    if manifest.get("schema_version") != 2 or manifest.get("suite") != "e2e":
+        raise ValueError(
+            "Unsupported run schema; rebuild historical runs with their original client"
+        )
+    selection = read_json(root / "selection.json")
+    if digest(selection) != manifest["contract"]["selection_hash"]:
+        raise ValueError("Selection manifest hash mismatch")
     for name, metadata in manifest["contract"]["datasets"].items():
         rows = read_jsonl(root / "inputs" / f"{name}.jsonl")
+        chosen = selection["datasets"][metadata["source_dataset"]]
+        if metadata["selection"] != chosen or [r["id"] for r in rows] != chosen["ids"]:
+            raise ValueError("Dataset differs from frozen selection")
         if len(rows) != metadata["expected"] or digest(rows) != metadata["samples_hash"]:
             raise ValueError(f"Input manifest hash mismatch: {name}")
     for name, metadata in manifest["contract"].get("warmup_inputs", {}).items():
         rows = read_jsonl(root / "warmup-inputs" / f"{name}.jsonl")
         if len(rows) != metadata["expected"] or digest(rows) != metadata["samples_hash"]:
             raise ValueError(f"Warmup input manifest hash mismatch: {name}")
+    contract = manifest["contract"]
+    expected = {
+        f"{name}-c{c}-r{r}"
+        for name in contract["datasets"]
+        for c in contract["levels"]
+        for r in range(1, contract["repeats"] + 1)
+    }
+    cells = manifest["cells"]
+    if len(cells) != len(expected) or {c["id"] for c in cells} != expected:
+        raise ValueError("Manifest cell grid differs from the planned workload")
     return manifest
 
 
-def code_identity_lines(manifest, supplement=None):
+def code_identity_lines(manifest):
     """Display frozen run identities, never the checkout rebuilding the report."""
-    supplement = supplement or {}
     deployment = manifest.get("contract", {}).get("deployment") or {}
     identities = {
         "被测服务代码": deployment.get("server") or {},
         "评测客户端代码": manifest.get("client") or {},
     }
     lines = []
-    for label, key in (("被测服务代码", "server"), ("评测客户端代码", "client")):
-        identity = dict(identities[label])
-        for field, value in supplement.get(key, {}).items():
-            if identity.get(field) is not None and identity[field] != value:
-                raise ValueError(f"Conflicting saved code identity: {key}.{field}")
-            identity[field] = value
-        if key == "client":
-            for field, value in (deployment.get("client_build") or {}).items():
-                if identity.get(field) is None:
-                    identity[field] = value
+    for label, identity in identities.items():
         branch = identity.get("branch") or (
             "detached HEAD" if identity.get("branch") == "" else "未记录"
         )
@@ -277,13 +275,9 @@ def _format_value(value):
 
 
 def dataset_columns(manifest, dataset_id):
-    """Use frozen dataset metadata for labels, with an explicit local-sample fallback."""
+    """Label the frozen QA dataset and modality."""
     metadata = manifest["contract"]["datasets"][dataset_id]
-    kind = metadata.get("kind") or "unrecorded"
-    source = (
-        metadata.get("source_dataset")
-        or f"{'custom-json' if kind == 'json' else kind}/{dataset_id}"
-    )
+    source = metadata["source_dataset"]
     label = str(source).replace("|", r"\|").replace("\n", " ")
     dataset = f"[{label}](inputs/{quote(dataset_id, safe='')}.jsonl)"
     modality = (
@@ -305,6 +299,7 @@ def performance_table(manifest, performance, *, averages=False):
         ("c50", "C50 (%)"),
         ("c100", "C100 (%)"),
         ("audio_throughput_s_per_s", "audio-s/s"),
+        ("output_throughput", "TPS"),
         ("throughput_qps", "QPS"),
     )
     lines = [
@@ -339,78 +334,21 @@ def performance_table(manifest, performance, *, averages=False):
     return lines
 
 
-def correctness_section(root, manifest):
-    """Display manifest-bound checks; keep an empty table when no proof is bound."""
-    root = Path(root)
-    proof = manifest.get("correctness")
-    header = ["| 检查项 | 通过/全部 | 状态 |", "|---|---:|---|"]
-    if not isinstance(proof, dict):
-        lines = [
-            "## 正确性测试",
-            "",
-            "状态：未绑定本run的完整正确性证明。外部检查见执行说明。",
-            "",
-            *header,
-        ]
-        if (root / "correctness/correctness.json").exists():
-            lines.extend(["", "[未绑定的本地报告](correctness/correctness.json)"])
-        return lines
-    if proof.get("report") != "correctness/correctness.json":
-        raise ValueError("Invalid correctness report path")
-    path = root / proof["report"]
-    if hashlib.sha256(path.read_bytes()).hexdigest() != proof.get("sha256"):
-        raise ValueError("Correctness proof hash mismatch")
-    from .correctness import read_correctness
-
-    suite = read_correctness(root / "correctness")
-    if suite["status"] != proof.get("status"):
-        raise ValueError("Correctness proof status mismatch")
-    names = (
-        "身份与输入",
-        "CPU回归",
-        "Processor / HF",
-        "CUDA回归",
-        "AR / HF",
-        "Encoder / HF",
-        "Decoder / HF",
-        "服务协议",
-        "并发隔离",
-    )
-    passed = sum(gate["status"] == "pass" for gate in suite["gates"].values())
-    lines = [
-        "## 正确性测试",
-        "",
-        f"状态：{suite['status']}；通过 {passed}/{len(suite['gates'])} 组。",
-        "",
-        *header,
-    ]
-    for gate_id, name in zip(sorted(suite["gates"]), names, strict=True):
-        name = suite.get("gate_names", {}).get(gate_id, name)
-        gate = suite["gates"][gate_id]
-        checks = gate.get("checks", [])
-        count = sum(check["status"] == "pass" for check in checks)
-        coverage = f"{count}/{len(checks)}" if checks else "N/A"
-        lines.append(f"| {gate_id} {name} | {coverage} | {gate['status']} |")
-    target = (
-        "correctness/correctness.md"
-        if (root / "correctness/correctness.md").exists()
-        else proof["report"]
-    )
-    lines.extend(["", f"[完整正确性报告]({target})；通过/全部表示记录的检查项数。"])
-    return lines
-
-
 def summary_markdown(root, manifest, performance, quality, identity_lines, notes=()):
-    """The single summary template for inference, offline rebuilds and archive views."""
+    """The summary shared by live runs and offline rebuilds."""
     from .quality import quality_markdown
 
     lines = [
         "# MOSS-Speech Benchmark",
         "",
         *identity_lines,
-        f"Mode: {manifest['contract']['mode']}; recorded inference state: {manifest['state']}.",
+        f"E2E inference state: {manifest['state']}; planned repeats: {manifest['contract']['repeats']}.",
         "",
-        *correctness_section(root, manifest),
+        "## 运行配置",
+        "",
+        f"并发：{manifest['contract']['levels']}；轮数：{manifest['contract']['repeats']}；预热数/组：{manifest['contract']['warmup_count'] if manifest['contract']['warmup_count'] is not None else '等于并发'}；stream：{manifest['contract']['stream']}。",
+        f"生成参数：`{dumps(manifest['contract']['sampling'])}`。",
+        f"本次状态：{manifest['state']}；错误：{manifest.get('error') or '无'}。",
         "",
         "## 性能测试",
         "",
@@ -421,16 +359,14 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
             if performance
             else "性能阶段未执行，暂无性能记录。"
         ),
-        "audio-s/s = 成功请求生成音频总秒数 / 本组墙钟秒数；QPS = 成功请求数 / 本组墙钟秒数。无音频或计时不完整记 N/A。",
+        "audio-s/s = 成功请求音频总秒数 / 本组墙钟秒数；TPS = 成功请求completion_tokens总数 / 本组墙钟秒数；QPS = 成功请求数 / 本组墙钟秒数。缺少usage或对应观测时记N/A。",
         "E2E为完整响应耗时；TTFT为首个非空文本；TTFA为首个非空PCM（可能含静音）。分位数逐组计算。",
         "RTF Mean与TTFA Mean是本组成功且指标有效请求的算术平均；RTF P95与TTFA P95是这些请求的95分位数。RTF先逐请求计算E2E/实际PCM时长，再求统计量。",
         "收益统计与性能筛选统一使用TTFA P95 (s)和RTF P95；Mean仅保留为诊断信息，缺失P95不回退Mean。",
         "最大欠载是单请求从首块开始立即播放、耗尽已到达音频后等待后续块的最长停顿；Max/P95分别对本组有效成功请求的最大欠载取最大值/95分位数，单位秒，不是块间隔。",
         "C50/C100是最大欠载分别≤50ms/≤100ms的有效成功多块音频请求百分比，范围0–100；失败和缺少多块观测的请求不进分母，非流式/纯文本/单块音频记N/A。",
-        "custom-json表示自定义固定样例，数据集链接指向本run冻结输入；原始测量编号保留在performance.json。",
+        "数据集链接指向本run冻结输入；选样身份见 [selection.json](selection.json)。",
     ]
-    for component, item in manifest["contract"].get("deferred_evaluations", {}).items():
-        lines.extend(["", f"Deferred: {component}: {item['reason']} Full suite is incomplete."])
     if manifest["contract"].get("repeat_aggregation") and performance:
         lines.extend(
             [
@@ -454,19 +390,37 @@ def summary_markdown(root, manifest, performance, quality, identity_lines, notes
     return lines
 
 
-def report(directory, baseline=None, allow_difference=()):
+def comparison_contract(manifest):
+    """Server implementations may differ; workloads and metric definitions may not."""
+    contract = manifest["contract"]
+    return {
+        key: contract[key]
+        for key in (
+            "selection_hash",
+            "sampling",
+            "stream",
+            "sample_rate",
+            "timeout",
+            "levels",
+            "repeats",
+            "warmup_policy",
+            "warmup_count",
+            "metric_version",
+            "client_source_hash",
+        )
+    } | {
+        "datasets": {
+            name: {key: metadata[key] for key in ("source_dataset", "task", "language", "system")}
+            | {"reference_sha256": metadata["service"].get("reference_sha256")}
+            for name, metadata in contract["datasets"].items()
+        }
+    }
+
+
+def report(directory, baseline=None):
     root = Path(directory)
     manifest = _load_manifest(root)
-    supplement = None
-    identity_path = root / "execution" / "records" / "code-identity.json"
-    if identity_path.exists():
-        supplement = read_json(identity_path)
-        if (
-            supplement.get("manifest_sha256")
-            != hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest()
-        ):
-            raise ValueError("Supplemental code identity manifest hash mismatch")
-    identity_lines = code_identity_lines(manifest, supplement)
+    identity_lines = code_identity_lines(manifest)
     from .quality import quality_report
 
     quality = quality_report(root)
@@ -490,19 +444,16 @@ def report(directory, baseline=None, allow_difference=()):
     write_json(
         root / "summary.json",
         {
-            "scope": manifest["scope"],
-            "mode": manifest["contract"]["mode"],
+            "suite": "e2e",
             "state": manifest["state"],
             "quality_status": "not_scored",
-            "correctness_status": (
-                manifest.get("correctness", {}).get("status")
-                if isinstance(manifest.get("correctness"), dict)
-                else "outside_client_scope"
-            ),
-            "deferred_evaluations": manifest["contract"].get("deferred_evaluations", {}),
-            "suite_status": "incomplete"
-            if manifest["contract"].get("deferred_evaluations")
-            else manifest["state"],
+            "suite_status": "complete"
+            if manifest["state"] == "complete"
+            and all(
+                s["measurement_complete"] and s["succeeded"] == s["expected"]
+                for s in performance.values()
+            )
+            else "incomplete",
             **{
                 key: sum(s[key] for s in performance.values())
                 for key in (
@@ -521,30 +472,25 @@ def report(directory, baseline=None, allow_difference=()):
     if baseline:
         base_root = Path(baseline)
         base = _load_manifest(base_root)
-        differences = _differences(base["contract"], manifest["contract"])
-        unexpected = [
-            d
-            for d in differences
-            if not any(d == a or d.startswith(a + ".") for a in allow_difference)
-        ]
-        verified_metadata = bool(base["contract"].get("deployment")) and bool(
-            manifest["contract"].get("deployment")
+        differences = _differences(comparison_contract(base), comparison_contract(manifest))
+        verified_metadata = all(
+            (m["contract"].get("deployment") or {}).get("server") for m in (base, manifest)
         )
-        compatible = not unexpected and verified_metadata
-        comparison = {
-            "compatible": compatible,
-            "differences": differences,
-            "unexpected_differences": unexpected,
-            "deployment_provided": verified_metadata,
-            "allowed_differences": list(allow_difference),
-            "gain_metrics": list(GAIN_METRICS),
-            "cells": {},
-        }
+        compatible = not differences and bool(verified_metadata)
+        comparison = dict(
+            compatible=compatible,
+            differences=differences,
+            deployment_provided=bool(verified_metadata),
+            gain_metrics=list(GAIN_METRICS),
+            cells={},
+            baseline_identity=base["contract"].get("deployment"),
+            current_identity=manifest["contract"].get("deployment"),
+        )
         table = [
             "# Baseline comparison",
             "",
             f"Compatible: {compatible}; deployment metadata is operator supplied.",
-            f"Differences: {differences}; unexpected: {unexpected}",
+            f"Workload differences: {differences}",
             "收益仅按TTFA P95 (s)与RTF P95比较；*-mean行为各轮P95等权轮均，Mean及其他指标仅存comparison.json作诊断。缺失或不可比的P95不计算收益，不回退Mean。",
             "",
             "| Cell | Metric | Baseline | Current | Delta | Delta % |",

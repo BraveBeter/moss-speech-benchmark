@@ -9,22 +9,10 @@
       "vendored_sha256": "50a7e055f0bd1ded2092720666db52eb7a74eb382f9e599648d3647937d11d3e"
     },
     {
-      "source": "src/tts_serving_benchmark/runner.py",
-      "relative_path": "runner.py",
-      "sha256": "1d1121a8b492397ebe1ffd5e04e44d3bb60ec8ea583ce9c7e97aaea7081239bb",
-      "vendored_sha256": "ba5a7c010bd1dedecf57bc36c8bd92deffbcd7c45239fa606149edc5709c58b6"
-    },
-    {
-      "source": "src/tts_serving_benchmark/dataset.py",
-      "relative_path": "dataset.py",
-      "sha256": "28f59a19e8f652a625776051946d66510396792a0f137d9e2fcfdb73dc153274",
-      "vendored_sha256": "28f59a19e8f652a625776051946d66510396792a0f137d9e2fcfdb73dc153274"
-    },
-    {
       "source": "src/tts_serving_benchmark/metrics/performance.py",
       "relative_path": "metrics/performance.py",
       "sha256": "583ef1cb6ef416919369c53cf877bced1d8eea47b94dabedd4ae6db3dadd7b46",
-      "vendored_sha256": "8a6da3e22f998f9b4bd1fea7b82dc041f97744f3f28e098d131fd56d907c9c26"
+      "vendored_sha256": "b55987d1601517716082a638f420345d0504c52eb00dd27d2dd11cc529d2c3ec"
     },
     {
       "source": "src/tts_serving_benchmark/metrics/playback_continuity.py",
@@ -33,30 +21,17 @@
       "vendored_sha256": "002a33af92d2707f4b5aef625e9cf91cfc3b9faab8b9bcd855edab12d00f37db"
     },
     {
-      "source": "src/tts_serving_benchmark/metrics/_format.py",
-      "relative_path": "metrics/_format.py",
-      "sha256": "7350aed2dd3f1a4dc04e80ff51bde568834549e35c172b0b955af987d12604bf",
-      "vendored_sha256": "7350aed2dd3f1a4dc04e80ff51bde568834549e35c172b0b955af987d12604bf"
-    },
-    {
       "source": "src/tts_serving_benchmark/metrics/__init__.py",
       "relative_path": "metrics/__init__.py",
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "vendored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
-  "changes": "Namespace imports; runner HTTP pool follows concurrency and drains cancelled tasks. Metric formulas and dataset loader unchanged.",
+  "changes": "Only the request schema, metric calculations and continuity helpers remain; unused runner, loaders, printers and precision providers were deleted. Metric formulas preserved.",
   "quality_sources": {
     "repository": "https://github.com/sgl-project/sglang-omni",
     "commit": "305273a673c281f2d214e1bed457a4b5b8895740",
     "files": [
-      {
-        "source": "benchmarks/metrics/accuracy.py",
-        "target": "accuracy.py",
-        "source_sha256": "5cb298c974af22fc4b2805aed393751fee791bf80685d972fdb0b445bd76aabb",
-        "vendored_sha256": "5cb298c974af22fc4b2805aed393751fee791bf80685d972fdb0b445bd76aabb",
-        "selected_symbols": null
-      },
       {
         "source": "benchmarks/metrics/speaker_similarity.py",
         "target": "speaker_similarity.py",
@@ -86,36 +61,6 @@
       }
     ],
     "changes": "Select pure ASR scoring functions; UTMOS local model-path constructor; remaining algorithms unchanged. UTMOS decodes saved PCM WAVs through soundfile float32 (same upstream audio fallback), preserving resampling/PCM16/prediction."
-  },
-  "correctness_sources": {
-    "eager_base": "084f62ef13c65fbf33f0c9a3f2cce5e87e0c01d6",
-    "providers": [
-      {
-        "source": ".audit/s4/reference/probe_core_comparison.py",
-        "source_sha256": "c84c8446da063ce94e9a2be7255cb8c30059f08745c88716684f3111817ace60",
-        "target": "processor.py",
-        "sha256": "9f610a61ea411d253abf712606ced756f973539ce503609c2c738a76315cb26f"
-      },
-      {
-        "source": ".audit/s4/reference/probe_core_weights.py",
-        "source_sha256": "0298426549d9d257e18ae9fd567b6bbbba2fe55b88ed9966378021e84a1c26a4",
-        "target": "ar.py",
-        "sha256": "7f1a29c0502927ad105f7ca4390b30aef3bcc5935baab387a1cf9580057ed608"
-      },
-      {
-        "source": ".audit/s4/reference/codec/probe_core_encoder_features.py",
-        "source_sha256": "510c90a30c1e48489fe3808aae8ef943cf701a7061cb7dfb3a5648c52d714930",
-        "target": "encoder.py",
-        "sha256": "a77cedb48c7f8ef1a622d9d2297643fe70d026b617a67817413e6ce1dea149bf"
-      },
-      {
-        "source": ".audit/s4/reference/codec/probe_core_full_codec.py",
-        "source_sha256": "2e245afcc24e6463eb90aa94097bf3531b256df54c9b0ffc5ee4a81fae999c00",
-        "target": "codec.py",
-        "sha256": "a1496cf1944956d2576cd2183639e5cdd739b512c131f8c1a4af10a3162f5236"
-      }
-    ],
-    "changes": "Explicit core/model/audio/profile paths; retain independent golden and all original numerical checks. CPU/CUDA tests stay in target source."
   },
   "qwen_asr_protocol": {
     "source": "https://github.com/sgl-project/sglang-omni/blob/main/benchmarks/tasks/asr.py",

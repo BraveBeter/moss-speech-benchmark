@@ -1,0 +1,37 @@
+{
+  "service": {
+    "api": "chat",
+    "tasks": [
+      "t2t",
+      "t2s",
+      "s2t",
+      "s2s"
+    ],
+    "streaming": true
+  },
+  "sampling": {
+    "seed": 42,
+    "temperature": 0,
+    "max_tokens": 512
+  },
+  "datasets": [
+    {
+      "id": "llama_questions",
+      "source": "../../assets/openaudio/llama_questions.csv",
+      "audio_root": "../../assets/openaudio/llama_questions/audios",
+      "revision": "REPLACE_WITH_DATASET_COMMIT"
+    },
+    {
+      "id": "trivia_qa",
+      "source": "../../assets/openaudio/trivia_qa.csv",
+      "audio_root": "../../assets/openaudio/trivia_qa/audios",
+      "revision": "REPLACE_WITH_DATASET_COMMIT"
+    },
+    {
+      "id": "web_questions",
+      "source": "../../assets/openaudio/web_questions.csv",
+      "audio_root": "../../assets/openaudio/web_questions/audios",
+      "revision": "REPLACE_WITH_DATASET_COMMIT"
+    }
+  ]
+}

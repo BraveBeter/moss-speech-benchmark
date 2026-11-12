@@ -92,30 +92,3 @@ async def server():
         yield url, state
     finally:
         await runner.cleanup()
-
-
-@pytest_asyncio.fixture
-async def correctness_stub(monkeypatch):
-    """Real orchestration is tested separately; gate before any fake HTTP traffic."""
-    from moss_speech_bench import correctness
-    from moss_speech_bench.storage import digest, write_json
-
-    state = {"status": "pass", "calls": 0}
-    monkeypatch.setattr(correctness, "load_suite", lambda _: {"base_url": state["url"]})
-
-    async def run(_, output, selected=None, resume=False):
-        state["calls"] += 1
-        config = {"base_url": state["url"]}
-        suite = dict(
-            status=state["status"],
-            config=config,
-            config_hash=digest(config),
-            gates={g: dict(status="pass", checks=[dict(status="pass")]) for g in correctness.GATES},
-        )
-        if state["status"] != "pass":
-            suite["gates"]["C04"] = dict(status="fail", checks=[])
-        write_json(output / "correctness.json", suite)
-        return suite
-
-    monkeypatch.setattr(correctness, "run_correctness", run)
-    return state

@@ -1,24 +1,30 @@
-"""Declared HTTP capabilities shared by workloads and HF regression."""
+"""Declared HTTP capabilities; deployments and GPU allocation stay outside E2E."""
 
 import base64
-import hashlib
-from pathlib import Path
 
-from .datasets import DEMO_AUDIO_SYSTEM, NATIVE_AUDIO_SYSTEM, SUPPORTED_QA_TASKS
+from .storage import file_hash
+
+TEXT_SYSTEM = "You are a helpful assistant. Respond with text outputs."
+AUDIO_SYSTEM = "You are a helpful assistant. Respond with spoken outputs."
 
 
 def service_config(spec, root, stream):
-    allowed = {"api", "tasks", "streaming", "reference_audio", "system"}
-    if not isinstance(spec, dict) or set(spec) - allowed:
+    if not isinstance(spec, dict) or set(spec) - {
+        "api",
+        "tasks",
+        "streaming",
+        "reference_audio",
+        "system",
+    }:
         raise ValueError("Unknown service capability fields")
     tasks = spec.get("tasks")
     if (
         not isinstance(tasks, list)
         or not tasks
         or len(set(tasks)) != len(tasks)
-        or not set(tasks) <= SUPPORTED_QA_TASKS
+        or not set(tasks) <= {"t2t", "t2s", "s2t", "s2s"}
     ):
-        raise ValueError("Service requires explicit unique QA tasks")
+        raise ValueError("Service requires unique t2t/t2s/s2t/s2s tasks")
     if spec.get("api") not in ("chat", "speech") or type(spec.get("streaming")) is not bool:
         raise ValueError("Service requires api=chat/speech and a streaming boolean")
     if stream and not spec["streaming"]:
@@ -26,16 +32,19 @@ def service_config(spec, root, stream):
     result = dict(spec)
     if spec["api"] == "speech":
         if tasks != ["t2s"] or spec["streaming"]:
-            raise ValueError("Speech transport requires tasks=[t2s] and streaming=false")
-        if spec.get("system") not in (DEMO_AUDIO_SYSTEM, NATIVE_AUDIO_SYSTEM):
-            raise ValueError("Named speech QA requires an official audio system prompt")
-        path = (Path(root) / spec["reference_audio"]).resolve()
-        raw = path.read_bytes()
-        if not raw:
+            raise ValueError("Speech API requires tasks=[t2s] and streaming=false")
+        system = spec.get("system", AUDIO_SYSTEM)
+        if not isinstance(system, str) or not system.strip():
+            raise ValueError("Speech API requires a nonempty declared system prompt")
+        audio = (root / spec["reference_audio"]).resolve()
+        if not audio.stat().st_size:
             raise ValueError("Empty reference audio")
         result.update(
-            reference_audio=str(path),
-            reference_sha256=hashlib.sha256(raw).hexdigest(),
-            reference_data="data:audio/wav;base64," + base64.b64encode(raw).decode(),
+            system=system,
+            reference_audio=str(audio),
+            reference_sha256=file_hash(audio),
+            reference_data="data:audio/wav;base64," + base64.b64encode(audio.read_bytes()).decode(),
         )
+    elif set(spec) & {"system", "reference_audio"}:
+        raise ValueError("Chat uses the standard per-modality system prompts")
     return result
