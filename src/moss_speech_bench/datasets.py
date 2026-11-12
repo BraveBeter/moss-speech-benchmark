@@ -111,8 +111,10 @@ def request(sample, task, model, stream, sampling, service):
             messages=[dict(role="system", content=system), dict(role="user", content=content)],
             modalities=["audio" if task.endswith("s") else "text"],
         )
-        if task.endswith("s") and stream:
-            payload["audio"] = dict(format="pcm")
+        if task.endswith("s") and (stream or "reference_data" in service):
+            payload["audio"] = dict(format="pcm" if stream else "wav")
+            if "reference_data" in service:
+                payload["audio"]["ref_audio"] = service["reference_data"]
         endpoint = "/v1/chat/completions"
     return dict(
         id=sample["id"],

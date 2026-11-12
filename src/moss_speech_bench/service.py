@@ -36,15 +36,18 @@ def service_config(spec, root, stream):
         system = spec.get("system", AUDIO_SYSTEM)
         if not isinstance(system, str) or not system.strip():
             raise ValueError("Speech API requires a nonempty declared system prompt")
+        result["system"] = system
+    elif "system" in spec:
+        raise ValueError("Chat uses the standard per-modality system prompts")
+    if spec.get("reference_audio"):
         audio = (root / spec["reference_audio"]).resolve()
         if not audio.stat().st_size:
             raise ValueError("Empty reference audio")
         result.update(
-            system=system,
             reference_audio=str(audio),
             reference_sha256=file_hash(audio),
             reference_data="data:audio/wav;base64," + base64.b64encode(audio.read_bytes()).decode(),
         )
-    elif set(spec) & {"system", "reference_audio"}:
-        raise ValueError("Chat uses the standard per-modality system prompts")
+    elif spec["api"] == "speech":
+        raise ValueError("Speech API requires reference_audio")
     return result

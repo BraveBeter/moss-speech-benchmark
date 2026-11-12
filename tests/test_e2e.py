@@ -262,3 +262,28 @@ async def test_cli_failure_and_offline_report_exit_codes(server, tmp_path):
     assert code == 1, error
     code, stdout, error = await invoke("e2e", "report", "--output-dir", str(output))
     assert code == 1 and "Report:" in stdout, error
+
+
+async def test_buffered_chat_speech_outputs_include_reference_audio(server, tmp_path):
+    path = workload(tmp_path, tasks=("t2s", "s2s"))
+    config = read_json(path)
+    (tmp_path / "voice.wav").write_bytes(b"fixed speaker")
+    config["service"]["reference_audio"] = "voice.wav"
+    write_json(path, config)
+    metrics = await run(
+        args(
+            path,
+            server[0],
+            tmp_path / "run",
+            "--samples",
+            "llama_questions=1",
+            "--warmup",
+            "0",
+            "--repeats",
+            "1",
+            "--no-stream",
+        )
+    )
+    assert len(metrics) == 2 and all(row["succeeded"] == 1 for row in metrics.values())
+    assert all(p["audio"]["ref_audio"] for p in server[1]["payloads"])
+    assert all(row["audio_ttfp_p95_s"] is None for row in metrics.values())

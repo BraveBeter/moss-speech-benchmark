@@ -15,8 +15,11 @@ async def server():
     async def handle(request):
         payload = await request.json()
         state["payloads"].append(payload)
-        # MOSS accepts request-level format controls only on streaming requests.
-        if payload.get("audio") and not payload["stream"]:
+        if (
+            payload.get("audio")
+            and not payload["stream"]
+            and payload["audio"].get("format") != "wav"
+        ):
             return web.json_response(
                 {"error": "request-level audio configuration unsupported"}, status=400
             )

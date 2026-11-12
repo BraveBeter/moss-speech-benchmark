@@ -50,7 +50,7 @@ moss-speech-bench e2e run \
 | `--dry-run` | 验证数据并显示正式、预热、质量评分计划；不发请求、不创建结果目录 |
 | `--resume` | 相同参数恢复：跳过已完成组，未完成组另建 attempt 后整组重跑 |
 
-Chat 使用标准系统提示词：文本输出为 `You are a helpful assistant. Respond with text outputs.`，语音输出为 `You are a helpful assistant. Respond with spoken outputs.`。不添加复述或简短回答指令。`service.api=speech` 仅支持非流式 T2S，参考音色和服务内部系统提示词由配置声明并冻结。
+Chat 语音输出可设置 `service.reference_audio`，客户端将其 data URI 随 `audio.ref_audio` 传递，并冻结音色 hash；非流式使用 WAV，流式使用 PCM。Chat 使用标准系统提示词：文本输出为 `You are a helpful assistant. Respond with text outputs.`，语音输出为 `You are a helpful assistant. Respond with spoken outputs.`。不添加复述或简短回答指令。`service.api=speech` 仅支持非流式 T2S，参考音色和服务内部系统提示词由配置声明并冻结。
 
 预热循环使用所选样本的前 N 条，不足时循环复用；每条有独立 ID。预热失败阻止该轮正式请求。预热输出单独存储，不进入性能和质量分母；它可能预填服务缓存，同进程的多轮测试不能称为独立冷启动。
 

@@ -132,3 +132,20 @@ def test_text_inputs_can_run_without_recordings_but_speech_inputs_require_them(t
     )
     with pytest.raises(ValueError, match="Missing/invalid dataset audio"):
         load(path, tasks=["s2t"], counts={"llama_questions": 2})
+
+
+@pytest.mark.parametrize("task", ["t2s", "s2s"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_chat_audio_reference_is_frozen_and_sent_for_both_transports(tmp_path, task, stream):
+    path = workload(tmp_path, tasks=(task,))
+    config = read_json(path)
+    (tmp_path / "voice.wav").write_bytes(b"fixed speaker")
+    config["service"]["reference_audio"] = "voice.wav"
+    write_json(path, config)
+    rows, _, _ = load_workload(path, "test", stream, counts={"llama_questions": 1})
+    requests, metadata = next(iter(rows.values()))
+    audio = requests[0]["payload"]["audio"]
+    assert audio["format"] == ("pcm" if stream else "wav")
+    assert audio["ref_audio"].startswith("data:audio/wav;base64,")
+    assert metadata["service"]["reference_sha256"]
+    assert "reference_data" not in metadata["service"]
